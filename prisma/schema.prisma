@@ -1,0 +1,225 @@
+// TA/DA Tracker — Prisma schema
+// Run: npm run db:generate, npm run db:push (or db:migrate)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN_MANAGER
+  FINANCE_MANAGER
+  EMPLOYEE
+}
+
+enum Band {
+  A
+  B1
+  B2
+  C1
+  C2
+  D
+  E1
+  E2
+  F1
+  F2
+  G
+}
+
+enum Modality {
+  PERMANENT
+  TEMPORARY
+  CONTRACTUAL
+  INTERN
+  PART_TIME
+  CONSULTANT
+}
+
+enum RequestType {
+  ADVANCE
+  REIMBURSEMENT
+}
+
+enum RequestStatus {
+  DRAFT
+  PENDING_LINE_MANAGER
+  PENDING_ADMIN_MANAGER
+  PENDING_FINANCE_MANAGER
+  APPROVED
+  DISBURSED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum LocationType {
+  CITY
+  INTERCITY
+}
+
+enum PaymentMethod {
+  BANK
+  BKASH
+}
+
+enum ClaimType {
+  TA
+  DA
+  AA
+}
+
+enum ApprovalStage {
+  LINE_MANAGER
+  ADMIN_MANAGER
+  FINANCE_MANAGER
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  DISBURSED
+}
+
+// ============================================================================
+// Core models
+// ============================================================================
+
+model User {
+  id            String   @id @default(cuid())
+  employeeId    String   @unique
+  name          String
+  email         String   @unique
+  passwordHash  String
+  designation   String
+  department    String
+  modality      Modality
+  band          Band
+  roles         Role[]   @default([EMPLOYEE])
+
+  lineManagerId String?
+  lineManager   User?    @relation("LineManager", fields: [lineManagerId], references: [id], onDelete: SetNull)
+  reports       User[]   @relation("LineManager")
+
+  requestsSubmitted Request[]        @relation("Submitter")
+  approvalActions   ApprovalRecord[] @relation("Actor")
+
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([lineManagerId])
+  @@index([department])
+}
+
+model Request {
+  id            String        @id @default(cuid())
+  type          RequestType
+  status        RequestStatus @default(DRAFT)
+
+  submitterId   String
+  submitter     User          @relation("Submitter", fields: [submitterId], references: [id])
+
+  purpose       String
+  destination   String
+  locationType  LocationType
+  tripStart     DateTime
+  tripEnd       DateTime
+
+  paymentMethod PaymentMethod
+  bankName      String?
+  bankAccount   String?
+  bankBranch    String?
+  bkashNumber   String?
+
+  totalAmount   Decimal       @db.Decimal(12, 2)
+
+  // For reimbursement linked to a prior advance
+  linkedAdvanceId String?  @unique
+  linkedAdvance   Request? @relation("AdvanceReimbursement", fields: [linkedAdvanceId], references: [id])
+  reimbursement   Request? @relation("AdvanceReimbursement")
+
+  // Computed at disbursal time for linked reimbursements
+  netDueToEmployee   Decimal? @db.Decimal(12, 2)
+  netDueFromEmployee Decimal? @db.Decimal(12, 2)
+
+  claimItems    ClaimItem[]
+  approvals     ApprovalRecord[]
+
+  submittedAt   DateTime?
+  disbursedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([submitterId])
+  @@index([status])
+  @@index([type, status])
+}
+
+model ClaimItem {
+  id           String    @id @default(cuid())
+  requestId    String
+  request      Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  type         ClaimType
+  description  String
+  amount       Decimal   @db.Decimal(12, 2)
+  quantity     Int       @default(1) // days for DA, nights for AA, count for TA items
+  rateSnapshot Decimal?  @db.Decimal(12, 2) // captured band-rate at submission (DA/AA)
+
+  receipts     Receipt[]
+
+  @@index([requestId])
+}
+
+model Receipt {
+  id          String    @id @default(cuid())
+  claimItemId String
+  claimItem   ClaimItem @relation(fields: [claimItemId], references: [id], onDelete: Cascade)
+
+  fileUrl     String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+
+  createdAt   DateTime  @default(now())
+
+  @@index([claimItemId])
+}
+
+model ApprovalRecord {
+  id        String         @id @default(cuid())
+  requestId String
+  request   Request        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  stage     ApprovalStage
+  action    ApprovalAction
+  actorId   String
+  actor     User           @relation("Actor", fields: [actorId], references: [id])
+  comment   String?
+
+  createdAt DateTime       @default(now())
+
+  @@index([requestId])
+  @@index([actorId])
+}
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  type      String
+  requestId String?
+  sentAt    DateTime @default(now())
+  error     String?
+
+  @@index([requestId])
+}
