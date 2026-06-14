@@ -19,6 +19,10 @@ export type SubmitState = {
   fieldErrors?: Record<string, string>;
 } | undefined;
 
+function tripDays(start: Date, end: Date) {
+  return Math.max(1, Math.ceil((+end - +start) / 86400000) + 1);
+}
+
 export async function submitReimbursementAction(
   _prev: SubmitState,
   fd: FormData
@@ -42,10 +46,6 @@ export async function submitReimbursementAction(
     tripStart: String(fd.get("tripStart") ?? ""),
     tripEnd: String(fd.get("tripEnd") ?? ""),
     paymentMethod: String(fd.get("paymentMethod") ?? ""),
-    bankName: String(fd.get("bankName") ?? ""),
-    bankAccount: String(fd.get("bankAccount") ?? ""),
-    bankBranch: String(fd.get("bankBranch") ?? ""),
-    bkashNumber: String(fd.get("bkashNumber") ?? ""),
     items,
   };
 
@@ -68,7 +68,6 @@ export async function submitReimbursementAction(
     return { error: "No line manager assigned to your profile. Contact your administrator." };
   }
 
-  // Validate linked advance if provided
   if (linkedAdvanceId) {
     const adv = await prisma.request.findUnique({
       where: { id: linkedAdvanceId },
@@ -85,10 +84,24 @@ export async function submitReimbursementAction(
     }
   }
 
-  const totalAmount = data.items.reduce(
-    (s, it) => s + Number(it.amount) * Number(it.quantity ?? 1),
-    0
-  );
+  // Per-item policy caps
+  const days = tripDays(data.tripStart, data.tripEnd);
+  const nights = Math.max(0, days - 1);
+  const daRate = daRateFor(submitter.band as Band, data.locationType as LocationType);
+  const aaCeiling = aaCeilingFor(submitter.band as Band);
+  const daCap = daRate * days;
+  const aaCap = aaCeiling * nights;
+
+  for (const it of data.items) {
+    if (it.type === "DA" && Number(it.amount) > daCap) {
+      return { fieldErrors: { items: `Dearness amount exceeds policy cap of BDT ${daCap.toLocaleString()}.` } };
+    }
+    if (it.type === "AA" && Number(it.amount) > aaCap) {
+      return { fieldErrors: { items: `Accommodation amount exceeds policy cap of BDT ${aaCap.toLocaleString()}.` } };
+    }
+  }
+
+  const totalAmount = data.items.reduce((s, it) => s + Number(it.amount), 0);
 
   const lineManager = await prisma.user.findUnique({
     where: { id: submitter.lineManagerId },
@@ -106,10 +119,6 @@ export async function submitReimbursementAction(
       tripStart: data.tripStart,
       tripEnd: data.tripEnd,
       paymentMethod: data.paymentMethod,
-      bankName: data.paymentMethod === "BANK" ? data.bankName || null : null,
-      bankAccount: data.paymentMethod === "BANK" ? data.bankAccount || null : null,
-      bankBranch: data.paymentMethod === "BANK" ? data.bankBranch || null : null,
-      bkashNumber: data.paymentMethod === "BKASH" ? data.bkashNumber || null : null,
       totalAmount,
       linkedAdvanceId,
       submittedAt: new Date(),
@@ -117,14 +126,10 @@ export async function submitReimbursementAction(
         create: data.items.map((it) => ({
           type: it.type,
           description: it.description,
-          quantity: it.quantity ?? 1,
+          quantity: 1,
           amount: it.amount,
           rateSnapshot:
-            it.type === "DA"
-              ? daRateFor(submitter.band as Band, data.locationType as LocationType)
-              : it.type === "AA"
-                ? aaCeilingFor(submitter.band as Band)
-                : null,
+            it.type === "DA" ? daRate : it.type === "AA" ? aaCeiling : null,
           receipts: {
             create: (it.receipts ?? []).map((r) => ({
               fileUrl: r.fileUrl,
@@ -148,8 +153,7 @@ export async function submitReimbursementAction(
         "A reimbursement claim is awaiting your approval",
         `<p><strong>${submitter.name}</strong> submitted a reimbursement claim totalling <strong>BDT ${totalAmount.toLocaleString()}</strong>.</p>
          <p><strong>Purpose:</strong> ${data.purpose}<br/>
-         <strong>Destination:</strong> ${data.destination}<br/>
-         <strong>Trip:</strong> ${data.tripStart.toDateString()} → ${data.tripEnd.toDateString()}</p>`,
+         <strong>Destination:</strong> ${data.destination}</p>`,
         approvalUrl(request.id),
         "Review claim"
       ),

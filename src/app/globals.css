@@ -128,3 +128,12 @@
     @apply font-sans;
   }
 }
+
+@media print {
+  header, nav, footer { display: none !important; }
+  body { background: white !important; }
+  .print\:hidden { display: none !important; }
+  main { padding: 0 !important; max-width: none !important; }
+  .grid { gap: 8px !important; }
+  table { font-size: 11px !important; }
+}

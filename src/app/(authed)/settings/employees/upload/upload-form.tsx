@@ -44,11 +44,11 @@ export function UploadForm() {
           <Label htmlFor="file">CSV file</Label>
           <Input id="file" name="file" type="file" accept=".csv,text/csv" required disabled={pending} />
           <p className="text-xs text-muted-foreground">
-            Required columns: Employee ID, Name, Email, Designation, Department, Modality, Band, Line Manager Email.
+            Required columns: Employee ID, Name, Email, Designation, Department, Modality, Line Manager Email.
             <br />
             Modality values: PERMANENT, TEMPORARY, CONTRACTUAL, INTERN, PART_TIME, CONSULTANT.
             <br />
-            Band values: A, B1, B2, C1, C2, D, E1, E2, F1, F2, G.
+            Band is derived from the designation automatically.
           </p>
         </div>
         <Button type="submit" disabled={pending}>

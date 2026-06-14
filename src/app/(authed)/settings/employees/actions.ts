@@ -9,17 +9,27 @@ import {
   employeeCreateSchema,
   employeeUpdateSchema,
 } from "@/lib/validators";
-import { Band, Modality, Role } from "@prisma/client";
+import { bandFromDesignation } from "@/lib/policy";
+import { Modality, Role } from "@prisma/client";
 
 export type FormState = { error?: string; fieldErrors?: Record<string, string> } | undefined;
 
 const DEFAULT_PASSWORD = "Change123!";
 
-function formToObject(fd: FormData) {
-  const obj: Record<string, string> = {};
+function readForm(fd: FormData) {
+  const obj: Record<string, string | string[]> = {};
   fd.forEach((v, k) => {
-    obj[k] = typeof v === "string" ? v : "";
+    if (typeof v !== "string") return;
+    if (k === "roles") {
+      const cur = obj[k];
+      if (Array.isArray(cur)) cur.push(v);
+      else if (typeof cur === "string") obj[k] = [cur, v];
+      else obj[k] = [v];
+    } else {
+      obj[k] = v;
+    }
   });
+  if (!("roles" in obj)) obj.roles = [];
   return obj;
 }
 
@@ -28,7 +38,7 @@ export async function createEmployeeAction(
   fd: FormData
 ): Promise<FormState> {
   await requireSuperAdmin();
-  const raw = formToObject(fd);
+  const raw = readForm(fd);
   const parsed = employeeCreateSchema.safeParse(raw);
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -39,16 +49,20 @@ export async function createEmployeeAction(
   }
 
   const data = parsed.data;
+  const band = bandFromDesignation(data.designation);
+  if (!band) return { fieldErrors: { designation: "Unknown designation" } };
+
   const password = data.password || DEFAULT_PASSWORD;
   const passwordHash = await bcrypt.hash(password, 10);
 
   const lineManager = data.lineManagerEmail
     ? await prisma.user.findUnique({ where: { email: data.lineManagerEmail.toLowerCase() } })
     : null;
-
   if (data.lineManagerEmail && !lineManager) {
     return { fieldErrors: { lineManagerEmail: "No user with that email" } };
   }
+
+  const roles = Array.from(new Set([Role.EMPLOYEE, ...((data.roles ?? []) as Role[])]));
 
   try {
     await prisma.user.create({
@@ -60,8 +74,8 @@ export async function createEmployeeAction(
         designation: data.designation,
         department: data.department,
         modality: data.modality as Modality,
-        band: data.band as Band,
-        roles: [Role.EMPLOYEE],
+        band,
+        roles,
         lineManagerId: lineManager?.id ?? null,
         mustChangePassword: !data.password,
       },
@@ -78,13 +92,14 @@ export async function createEmployeeAction(
   redirect("/settings/employees");
 }
 
+// NOTE: id is the LAST arg so we can .bind(null, id) and useActionState sees (prev, fd) signature.
 export async function updateEmployeeAction(
-  id: string,
   _prev: FormState,
-  fd: FormData
+  fd: FormData,
+  id: string
 ): Promise<FormState> {
   await requireSuperAdmin();
-  const raw = formToObject(fd);
+  const raw = readForm(fd);
   const parsed = employeeUpdateSchema.safeParse(raw);
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -93,8 +108,9 @@ export async function updateEmployeeAction(
     }
     return { fieldErrors };
   }
-
   const data = parsed.data;
+  const band = bandFromDesignation(data.designation);
+  if (!band) return { fieldErrors: { designation: "Unknown designation" } };
 
   const lineManager = data.lineManagerEmail
     ? await prisma.user.findUnique({ where: { email: data.lineManagerEmail.toLowerCase() } })
@@ -106,6 +122,8 @@ export async function updateEmployeeAction(
     return { fieldErrors: { lineManagerEmail: "Cannot be one's own line manager" } };
   }
 
+  const roles = Array.from(new Set([Role.EMPLOYEE, ...((data.roles ?? []) as Role[])]));
+
   const updatePayload: Record<string, unknown> = {
     employeeId: data.employeeId,
     name: data.name,
@@ -113,8 +131,9 @@ export async function updateEmployeeAction(
     designation: data.designation,
     department: data.department,
     modality: data.modality as Modality,
-    band: data.band as Band,
+    band,
     lineManagerId: lineManager?.id ?? null,
+    roles,
   };
 
   if (data.password) {
@@ -139,6 +158,15 @@ export async function updateEmployeeAction(
 
 export async function deleteEmployeeAction(id: string) {
   await requireSuperAdmin();
-  await prisma.user.delete({ where: { id } });
+  try {
+    await prisma.user.delete({ where: { id } });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    if (msg.includes("Foreign key")) {
+      return { error: "Cannot delete: employee has submissions on file." };
+    }
+    throw e;
+  }
   revalidatePath("/settings/employees");
+  redirect("/settings/employees");
 }

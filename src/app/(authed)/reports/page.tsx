@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth-guards";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/status-badge";
 import {
   Table,
   TableBody,
@@ -16,6 +17,7 @@ import { parseFilters, buildWhere, filtersToQuery, ALL_STATUSES, ALL_TYPES } fro
 import { statusLabel } from "@/lib/approval";
 import { BANDS } from "@/lib/validators";
 import { RequestStatus } from "@prisma/client";
+import { PrintButton } from "./_components/print-button";
 
 export const dynamic = "force-dynamic";
 
@@ -57,13 +59,50 @@ export default async function ReportsPage({
     include: { submitter: { select: { name: true, email: true, department: true, band: true } } },
   });
 
-  const submitted = requests.length;
+  // Finance-oriented aggregates
+  const totalSubmitted = requests.length;
   const totalAmount = requests.reduce((s, r) => s + Number(r.totalAmount), 0);
+
   const disbursedReqs = requests.filter((r) => r.status === RequestStatus.DISBURSED);
   const disbursedAmount = disbursedReqs.reduce((s, r) => s + Number(r.totalAmount), 0);
-  const pendingCount = requests.filter((r) => PENDING_STATUSES.includes(r.status)).length;
 
-  // Monthly disbursement summary (by disbursedAt month)
+  const readyToDisburse = requests.filter((r) => r.status === RequestStatus.APPROVED);
+  const readyToDisburseAmount = readyToDisburse.reduce((s, r) => s + Number(r.totalAmount), 0);
+
+  const pendingReqs = requests.filter((r) => PENDING_STATUSES.includes(r.status));
+  const pendingAmount = pendingReqs.reduce((s, r) => s + Number(r.totalAmount), 0);
+
+  const netReceivable = disbursedReqs.reduce(
+    (s, r) => s + (r.netDueFromEmployee ? Number(r.netDueFromEmployee) : 0),
+    0
+  );
+  const netPayableExtras = disbursedReqs.reduce(
+    (s, r) => s + (r.netDueToEmployee ? Number(r.netDueToEmployee) : 0),
+    0
+  );
+
+  // By payment method
+  const byMethod = new Map<string, { count: number; amount: number }>();
+  for (const r of disbursedReqs) {
+    const k = r.paymentMethod;
+    const cur = byMethod.get(k) ?? { count: 0, amount: 0 };
+    cur.count += 1;
+    cur.amount += Number(r.totalAmount);
+    byMethod.set(k, cur);
+  }
+
+  // By department (disbursed)
+  const byDept = new Map<string, { count: number; amount: number }>();
+  for (const r of disbursedReqs) {
+    const k = r.submitter.department;
+    const cur = byDept.get(k) ?? { count: 0, amount: 0 };
+    cur.count += 1;
+    cur.amount += Number(r.totalAmount);
+    byDept.set(k, cur);
+  }
+  const byDeptRows = Array.from(byDept.entries()).sort(([, a], [, b]) => b.amount - a.amount);
+
+  // Monthly disbursement
   const monthly = new Map<string, { count: number; amount: number }>();
   for (const r of disbursedReqs) {
     if (!r.disbursedAt) continue;
@@ -73,15 +112,14 @@ export default async function ReportsPage({
     cur.amount += Number(r.totalAmount);
     monthly.set(k, cur);
   }
-  const monthlyRows = Array.from(monthly.entries())
-    .sort(([a], [b]) => (a < b ? 1 : -1));
+  const monthlyRows = Array.from(monthly.entries()).sort(([a], [b]) => (a < b ? 1 : -1));
 
-  // Pending aging buckets
+  // Pending aging
   const now = new Date();
   const buckets: Record<string, Record<string, number>> = {
-    "PENDING_LINE_MANAGER": { "0-2": 0, "3-7": 0, "8-14": 0, "15+": 0 },
-    "PENDING_ADMIN_MANAGER": { "0-2": 0, "3-7": 0, "8-14": 0, "15+": 0 },
-    "PENDING_FINANCE_MANAGER": { "0-2": 0, "3-7": 0, "8-14": 0, "15+": 0 },
+    PENDING_LINE_MANAGER: { "0-2": 0, "3-7": 0, "8-14": 0, "15+": 0 },
+    PENDING_ADMIN_MANAGER: { "0-2": 0, "3-7": 0, "8-14": 0, "15+": 0 },
+    PENDING_FINANCE_MANAGER: { "0-2": 0, "3-7": 0, "8-14": 0, "15+": 0 },
   };
   for (const r of requests) {
     if (!PENDING_STATUSES.includes(r.status)) continue;
@@ -95,22 +133,25 @@ export default async function ReportsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Finance reports</h1>
           <p className="text-sm text-muted-foreground">
-            Visible to Finance, Admin Manager, and Super Admin
+            Disbursements, payables, receivables, and approval pipeline health
           </p>
         </div>
-        <a
-          href={`/reports/export${qs ? `?${qs}` : ""}`}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          Export CSV
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/reports/export${qs ? `?${qs}` : ""}`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Download CSV
+          </a>
+          <PrintButton />
+        </div>
       </div>
 
-      <Card>
+      <Card className="print:hidden">
         <CardHeader>
           <CardTitle className="text-base">Filters</CardTitle>
           <CardDescription>Date range applies to submission date.</CardDescription>
@@ -161,30 +202,90 @@ export default async function ReportsPage({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Finance KPI cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard label="Disbursed" amount={disbursedAmount} count={disbursedReqs.length} tone="emerald" />
+        <KpiCard label="Ready to disburse" amount={readyToDisburseAmount} count={readyToDisburse.length} tone="blue" />
+        <KpiCard label="In approval pipeline" amount={pendingAmount} count={pendingReqs.length} tone="amber" />
+        <KpiCard label="Total submitted" amount={totalAmount} count={totalSubmitted} tone="zinc" />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <KpiCard
+          label="Net payable to employees (reconciled)"
+          amount={netPayableExtras}
+          count={null}
+          tone="emerald"
+          hint="From reimbursements that exceeded the linked advance"
+        />
+        <KpiCard
+          label="Net receivable from employees"
+          amount={netReceivable}
+          count={null}
+          tone="rose"
+          hint="Excess advance to be returned"
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardDescription>Submitted</CardDescription>
-            <CardTitle className="text-2xl">{submitted}</CardTitle>
+            <CardTitle className="text-base">Disbursement by payment method</CardTitle>
           </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Count</TableHead>
+                  <TableHead>Amount (BDT)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {byMethod.size === 0 ? (
+                  <TableRow><TableCell colSpan={3} className="text-center text-sm text-muted-foreground">No disbursals in range.</TableCell></TableRow>
+                ) : (
+                  Array.from(byMethod.entries()).map(([k, v]) => (
+                    <TableRow key={k}>
+                      <TableCell>{k === "BANK" ? "Bank" : "bKash"}</TableCell>
+                      <TableCell>{v.count}</TableCell>
+                      <TableCell>{Math.round(v.amount).toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
-            <CardDescription>Pending</CardDescription>
-            <CardTitle className="text-2xl">{pendingCount}</CardTitle>
+            <CardTitle className="text-base">Top departments (disbursed)</CardTitle>
           </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Disbursed</CardDescription>
-            <CardTitle className="text-2xl">{disbursedReqs.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Total disbursed</CardDescription>
-            <CardTitle className="text-2xl">{fmtBdt(disbursedAmount)}</CardTitle>
-          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Count</TableHead>
+                  <TableHead>Amount (BDT)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {byDeptRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={3} className="text-center text-sm text-muted-foreground">No disbursals in range.</TableCell></TableRow>
+                ) : (
+                  byDeptRows.slice(0, 8).map(([k, v]) => (
+                    <TableRow key={k}>
+                      <TableCell>{k}</TableCell>
+                      <TableCell>{v.count}</TableCell>
+                      <TableCell>{Math.round(v.amount).toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
         </Card>
       </div>
 
@@ -192,7 +293,7 @@ export default async function ReportsPage({
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Monthly disbursement</CardTitle>
-            <CardDescription>Grouped by month of disbursal within the filtered set.</CardDescription>
+            <CardDescription>By disbursal month.</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -205,9 +306,7 @@ export default async function ReportsPage({
               </TableHeader>
               <TableBody>
                 {monthlyRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">No disbursals in range.</TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={3} className="text-center text-sm text-muted-foreground">No disbursals in range.</TableCell></TableRow>
                 ) : (
                   monthlyRows.map(([k, v]) => (
                     <TableRow key={k}>
@@ -224,8 +323,8 @@ export default async function ReportsPage({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Pending by stage — aging</CardTitle>
-            <CardDescription>Days since submission, grouped by current approval stage.</CardDescription>
+            <CardTitle className="text-base">Pending pipeline aging</CardTitle>
+            <CardDescription>Days since submission, by current stage.</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -245,9 +344,7 @@ export default async function ReportsPage({
                     <TableCell>{b["0-2"]}</TableCell>
                     <TableCell>{b["3-7"]}</TableCell>
                     <TableCell>{b["8-14"]}</TableCell>
-                    <TableCell className={b["15+"] > 0 ? "font-semibold text-destructive" : ""}>
-                      {b["15+"]}
-                    </TableCell>
+                    <TableCell className={b["15+"] > 0 ? "font-semibold text-destructive" : ""}>{b["15+"]}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -258,9 +355,9 @@ export default async function ReportsPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Requests</CardTitle>
+          <CardTitle className="text-base">All requests in range</CardTitle>
           <CardDescription>
-            {submitted} request{submitted === 1 ? "" : "s"} — total BDT {Math.round(totalAmount).toLocaleString()}
+            {totalSubmitted} request{totalSubmitted === 1 ? "" : "s"} — total {fmtBdt(totalAmount)}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -271,10 +368,10 @@ export default async function ReportsPage({
                 <TableHead>Submitter</TableHead>
                 <TableHead>Dept · Band</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Purpose</TableHead>
+                <TableHead>Method</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">&nbsp;</TableHead>
+                <TableHead className="text-right print:hidden">&nbsp;</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -294,14 +391,12 @@ export default async function ReportsPage({
                     <div className="text-sm">{r.submitter.name}</div>
                     <div className="text-xs text-muted-foreground">{r.submitter.email}</div>
                   </TableCell>
-                  <TableCell className="text-xs">
-                    {r.submitter.department} · {r.submitter.band}
-                  </TableCell>
+                  <TableCell className="text-xs">{r.submitter.department} · {r.submitter.band}</TableCell>
                   <TableCell><Badge variant="outline">{r.type}</Badge></TableCell>
-                  <TableCell className="text-sm max-w-xs truncate">{r.purpose}</TableCell>
+                  <TableCell className="text-xs">{r.paymentMethod === "BANK" ? "Bank" : "bKash"}</TableCell>
                   <TableCell>{Number(r.totalAmount).toLocaleString()}</TableCell>
-                  <TableCell><Badge variant="secondary">{statusLabel(r.status)}</Badge></TableCell>
-                  <TableCell className="text-right">
+                  <TableCell><StatusBadge status={r.status} /></TableCell>
+                  <TableCell className="text-right print:hidden">
                     <Link
                       href={`/requests/${r.id}`}
                       className={buttonVariants({ size: "sm", variant: "ghost" })}
@@ -315,6 +410,38 @@ export default async function ReportsPage({
           </Table>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  amount,
+  count,
+  tone,
+  hint,
+}: {
+  label: string;
+  amount: number;
+  count: number | null;
+  tone: "emerald" | "blue" | "amber" | "rose" | "zinc";
+  hint?: string;
+}) {
+  const tones: Record<typeof tone, string> = {
+    emerald: "from-emerald-50 to-emerald-100/50 border-emerald-200",
+    blue: "from-blue-50 to-blue-100/50 border-blue-200",
+    amber: "from-amber-50 to-amber-100/50 border-amber-200",
+    rose: "from-rose-50 to-rose-100/50 border-rose-200",
+    zinc: "from-zinc-50 to-zinc-100/50 border-zinc-200",
+  };
+  return (
+    <div className={`rounded-lg border bg-gradient-to-br p-4 transition-shadow hover:shadow-sm ${tones[tone]}`}>
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold">BDT {Math.round(amount).toLocaleString()}</div>
+      {count != null && (
+        <div className="mt-0.5 text-xs text-muted-foreground">{count} request{count === 1 ? "" : "s"}</div>
+      )}
+      {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
     </div>
   );
 }

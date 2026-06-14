@@ -6,6 +6,8 @@ import { EmployeeForm } from "../employee-form";
 import { updateEmployeeAction, deleteEmployeeAction, type FormState } from "../actions";
 import { Button } from "@/components/ui/button";
 
+export const dynamic = "force-dynamic";
+
 export default async function EditEmployeePage({
   params,
 }: {
@@ -18,15 +20,15 @@ export default async function EditEmployeePage({
   });
   if (!user) notFound();
 
-  const bound = async (prev: FormState, fd: FormData) =>
-    updateEmployeeAction(id, prev, fd);
+  async function update(prev: FormState, fd: FormData): Promise<FormState> {
+    "use server";
+    return updateEmployeeAction(prev, fd, id);
+  }
 
-  const deleteBound = async () => {
+  async function del() {
     "use server";
     await deleteEmployeeAction(id);
-    const { redirect } = await import("next/navigation");
-    redirect("/settings/employees");
-  };
+  }
 
   return (
     <div className="space-y-6">
@@ -46,7 +48,7 @@ export default async function EditEmployeePage({
         </CardHeader>
         <CardContent>
           <EmployeeForm
-            action={bound}
+            action={update}
             submitLabel="Save changes"
             showPasswordField
             passwordHelp="Leave blank to keep the existing password."
@@ -59,6 +61,7 @@ export default async function EditEmployeePage({
               modality: user.modality,
               band: user.band,
               lineManagerEmail: user.lineManager?.email ?? "",
+              roles: user.roles.filter((r) => r !== "EMPLOYEE"),
             }}
           />
         </CardContent>
@@ -69,7 +72,7 @@ export default async function EditEmployeePage({
           <CardTitle className="text-base text-destructive">Danger zone</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={deleteBound}>
+          <form action={del}>
             <Button type="submit" variant="destructive" size="sm">
               Delete employee
             </Button>

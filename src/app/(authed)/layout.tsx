@@ -5,6 +5,7 @@ import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { signOutAction } from "./actions";
 import { hasRole } from "@/lib/auth-guards";
+import { HeaderNav } from "@/components/header-nav";
 
 export default async function AuthedLayout({
   children,
@@ -14,28 +15,45 @@ export default async function AuthedLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  const items: { href: string; label: string }[] = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/requests", label: "My requests" },
+    { href: "/approvals", label: "Approvals" },
+  ];
+  if (hasRole(session.user.roles, "FINANCE_MANAGER", "ADMIN_MANAGER", "SUPER_ADMIN")) {
+    items.push({ href: "/reports", label: "Reports" });
+  }
+  if (hasRole(session.user.roles, "SUPER_ADMIN")) {
+    items.push({ href: "/settings", label: "Settings" });
+  }
+
+  const initials = session.user.name
+    ?.split(/\s+/)
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b bg-background">
+      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-8">
-            <Link href="/dashboard"><Logo /></Link>
-            <nav className="hidden items-center gap-1 text-sm md:flex">
-              <Link href="/dashboard" className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Dashboard</Link>
-              <Link href="/requests" className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">My requests</Link>
-              <Link href="/approvals" className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Approvals</Link>
-              {hasRole(session.user.roles, "FINANCE_MANAGER", "ADMIN_MANAGER", "SUPER_ADMIN") && (
-                <Link href="/reports" className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Reports</Link>
-              )}
-              {hasRole(session.user.roles, "SUPER_ADMIN") && (
-                <Link href="/settings" className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Settings</Link>
-              )}
-            </nav>
+            <Link href="/dashboard" className="transition-opacity hover:opacity-80">
+              <Logo />
+            </Link>
+            <HeaderNav items={items} />
           </div>
-          <div className="flex items-center gap-4">
-            <div className="hidden text-right text-xs sm:block">
-              <div className="font-medium">{session.user.name}</div>
-              <div className="text-muted-foreground">{session.user.email}</div>
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-2.5 sm:flex">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                {initials}
+              </div>
+              <div className="text-right text-xs leading-tight">
+                <div className="font-medium">{session.user.name}</div>
+                <div className="text-muted-foreground">{session.user.email}</div>
+              </div>
             </div>
             <form action={signOutAction}>
               <Button type="submit" variant="outline" size="sm">
@@ -45,7 +63,7 @@ export default async function AuthedLayout({
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8 animate-in fade-in duration-300">
         {children}
       </main>
     </div>

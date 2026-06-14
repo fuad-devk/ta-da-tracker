@@ -71,3 +71,55 @@ export const BAND_DESIGNATIONS: Record<Band, { managerial: string; specialist: s
   F1: { managerial: "Executive", specialist: null },
   G: { managerial: "Temporary Employee", specialist: null },
 };
+
+// Canonical designations grouped by band — used to drive the designation dropdown.
+// When an admin picks a designation, the band is derived automatically.
+export const DESIGNATION_TO_BAND: Record<string, Band> = {
+  // Band A
+  "CXO": "A",
+  // Band B2
+  "Senior Vice President": "B2",
+  "Chief Specialist": "B2",
+  // Band B1
+  "Vice President": "B1",
+  // Band C2
+  "Assistant Vice President": "C2",
+  "Principal Specialist": "C2",
+  // Band C1
+  "General Manager": "C1",
+  // Band D
+  "Manager": "D",
+  "Lead Specialist": "D",
+  // Band E2
+  "Deputy Manager": "E2",
+  "Senior Specialist": "E2",
+  // Band E1
+  "Assistant Manager": "E1",
+  "Specialist": "E1",
+  // Band F2
+  "Senior Executive": "F2",
+  // Band F1
+  "Executive": "F1",
+  // Band G (temporary employees)
+  "Admin Executive": "G",
+  "Intern": "G",
+  "Part-timer": "G",
+  "Consultant": "G",
+  "Contractual": "G",
+  "Student Advisor": "G",
+  "Project Executive": "G",
+  // Internal
+  "Super Admin": "A",
+};
+
+export const DESIGNATIONS = Object.keys(DESIGNATION_TO_BAND);
+
+export function bandFromDesignation(designation: string): Band | null {
+  const exact = DESIGNATION_TO_BAND[designation];
+  if (exact) return exact;
+  // Case-insensitive fallback
+  const found = Object.entries(DESIGNATION_TO_BAND).find(
+    ([d]) => d.toLowerCase() === designation.trim().toLowerCase()
+  );
+  return found ? found[1] : null;
+}

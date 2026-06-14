@@ -1,4 +1,4 @@
-Employee ID,Name,Email,Designation,Department,Modality,Band,Line Manager Email
-10MS-100,Asha Rahman,asha@10minuteschool.com,Senior Executive,Marketing,PERMANENT,F2,fuad@10minuteschool.com
-10MS-101,Imran Khan,imran@10minuteschool.com,Executive,Marketing,PERMANENT,F1,asha@10minuteschool.com
-10MS-102,Nadia Hossain,nadia@10minuteschool.com,Intern,Marketing,INTERN,G,asha@10minuteschool.com
+Employee ID,Name,Email,Designation,Department,Modality,Line Manager Email
+10MS-100,Asha Rahman,asha@10minuteschool.com,Senior Executive,Marketing,PERMANENT,fuad@10minuteschool.com
+10MS-101,Imran Khan,imran@10minuteschool.com,Executive,Marketing,PERMANENT,asha@10minuteschool.com
+10MS-102,Nadia Hossain,nadia@10minuteschool.com,Intern,Marketing,INTERN,asha@10minuteschool.com

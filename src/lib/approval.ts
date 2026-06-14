@@ -47,7 +47,11 @@ export async function canUserActOnRequest(
 ): Promise<boolean> {
   const stage = STAGE_FOR_PENDING_STATUS[request.status];
   if (!stage) return false;
-  if (request.submitterId === user.id) return false; // can't approve own
+
+  // Super Admin override — can act at any stage, including on own request.
+  if (user.roles.includes(Role.SUPER_ADMIN)) return true;
+
+  if (request.submitterId === user.id) return false; // others can't approve own
 
   if (stage === ApprovalStage.LINE_MANAGER) {
     const submitter = await prisma.user.findUnique({
@@ -57,10 +61,10 @@ export async function canUserActOnRequest(
     return submitter?.lineManagerId === user.id;
   }
   if (stage === ApprovalStage.ADMIN_MANAGER) {
-    return user.roles.includes(Role.ADMIN_MANAGER) || user.roles.includes(Role.SUPER_ADMIN);
+    return user.roles.includes(Role.ADMIN_MANAGER);
   }
   if (stage === ApprovalStage.FINANCE_MANAGER) {
-    return user.roles.includes(Role.FINANCE_MANAGER) || user.roles.includes(Role.SUPER_ADMIN);
+    return user.roles.includes(Role.FINANCE_MANAGER);
   }
   return false;
 }
@@ -82,17 +86,23 @@ export async function pendingForUserWhere(user: Pick<User, "id" | "roles">) {
       submitterId: { in: reportIds },
     });
   }
-  if (user.roles.includes(Role.ADMIN_MANAGER) || user.roles.includes(Role.SUPER_ADMIN)) {
-    ors.push({
-      status: RequestStatus.PENDING_ADMIN_MANAGER,
-      NOT: { submitterId: user.id },
-    });
+  const isSuperAdmin = user.roles.includes(Role.SUPER_ADMIN);
+  const adminCondition = isSuperAdmin
+    ? { status: RequestStatus.PENDING_ADMIN_MANAGER }
+    : { status: RequestStatus.PENDING_ADMIN_MANAGER, NOT: { submitterId: user.id } };
+  const financeCondition = isSuperAdmin
+    ? { status: RequestStatus.PENDING_FINANCE_MANAGER }
+    : { status: RequestStatus.PENDING_FINANCE_MANAGER, NOT: { submitterId: user.id } };
+
+  if (user.roles.includes(Role.ADMIN_MANAGER) || isSuperAdmin) {
+    ors.push(adminCondition);
   }
-  if (user.roles.includes(Role.FINANCE_MANAGER) || user.roles.includes(Role.SUPER_ADMIN)) {
-    ors.push({
-      status: RequestStatus.PENDING_FINANCE_MANAGER,
-      NOT: { submitterId: user.id },
-    });
+  if (user.roles.includes(Role.FINANCE_MANAGER) || isSuperAdmin) {
+    ors.push(financeCondition);
+  }
+  if (isSuperAdmin) {
+    // Super Admin can also pick up stage-1 (line manager) items regardless of LM link.
+    ors.push({ status: RequestStatus.PENDING_LINE_MANAGER });
   }
   if (ors.length === 0) return { id: "__never__" }; // matches nothing
   return { OR: ors };

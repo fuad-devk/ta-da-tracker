@@ -4,14 +4,9 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export type Receipt = {
   fileUrl: string;
@@ -23,21 +18,27 @@ export type Receipt = {
 export type ClaimItem = {
   type: "TA" | "DA" | "AA";
   description: string;
-  quantity: number;
+  quantity: number; // hidden, always 1 — kept for schema compat
   amount: number;
   receipts?: Receipt[];
 };
 
-const TYPE_LABEL: Record<ClaimItem["type"], string> = {
-  TA: "Travel Allowance",
-  DA: "Dearness Allowance",
-  AA: "Accommodation Allowance",
-};
-
-const QUANTITY_LABEL: Record<ClaimItem["type"], string> = {
-  TA: "Count",
-  DA: "Days",
-  AA: "Nights",
+const TYPE_INFO: Record<ClaimItem["type"], { label: string; placeholder: string; hint: string }> = {
+  TA: {
+    label: "Travel",
+    placeholder: "e.g. Bus tickets, Uber, road toll",
+    hint: "Reimbursed in full with receipts",
+  },
+  DA: {
+    label: "Dearness",
+    placeholder: "e.g. Daily food, refreshments",
+    hint: "Per-band rate × trip days",
+  },
+  AA: {
+    label: "Accommodation",
+    placeholder: "e.g. Hotel stay",
+    hint: "Per-band ceiling × nights",
+  },
 };
 
 export function ClaimItemsEditor({
@@ -45,29 +46,29 @@ export function ClaimItemsEditor({
   defaultItems,
   showError,
   enableReceipts = false,
+  caps,
 }: {
   name: string;
   defaultItems?: ClaimItem[];
   showError?: string;
   enableReceipts?: boolean;
+  caps?: { da: number | null; aa: number | null; overall: number | null };
 }) {
   const [items, setItems] = useState<ClaimItem[]>(
     defaultItems ?? [{ type: "TA", description: "", quantity: 1, amount: 0, receipts: [] }]
   );
 
-  const total = items.reduce(
-    (s, it) => s + Number(it.amount || 0) * Number(it.quantity || 1),
-    0
-  );
+  const total = items.reduce((s, it) => s + Number(it.amount || 0), 0);
+  const overCap = caps?.overall != null && total > caps.overall;
 
   const update = (idx: number, patch: Partial<ClaimItem>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
   const remove = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx));
-  const add = () =>
+  const add = (type: ClaimItem["type"]) =>
     setItems((prev) => [
       ...prev,
-      { type: "TA", description: "", quantity: 1, amount: 0, receipts: [] },
+      { type, description: "", quantity: 1, amount: 0, receipts: [] },
     ]);
 
   const addReceipt = (idx: number, r: Receipt) => {
@@ -77,7 +78,6 @@ export function ClaimItemsEditor({
       )
     );
   };
-
   const removeReceipt = (idx: number, rIdx: number) => {
     setItems((prev) =>
       prev.map((it, i) =>
@@ -88,66 +88,89 @@ export function ClaimItemsEditor({
     );
   };
 
+  const perItemCap = (t: ClaimItem["type"]): number | null => {
+    if (!caps) return null;
+    if (t === "DA") return caps.da;
+    if (t === "AA") return caps.aa;
+    return null;
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <input type="hidden" name={name} value={JSON.stringify(items)} />
 
-      <div className="space-y-3">
-        {items.map((it, idx) => (
-          <div key={idx} className="rounded-md border bg-background p-4">
-            <div className="grid gap-3 sm:grid-cols-12">
-              <div className="sm:col-span-3 space-y-1.5">
-                <Label>Type</Label>
-                <Select
-                  value={it.type}
-                  onValueChange={(v) => update(idx, { type: v as ClaimItem["type"] })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
+      <div className="space-y-2">
+        {items.map((it, idx) => {
+          const cap = perItemCap(it.type);
+          const overItemCap = cap != null && Number(it.amount || 0) > cap;
+          const info = TYPE_INFO[it.type];
+
+          return (
+            <div
+              key={idx}
+              className={cn(
+                "group rounded-md border bg-background p-3 transition-colors",
+                overItemCap && "border-destructive/40 bg-destructive/5"
+              )}
+            >
+              <div className="grid gap-3 sm:grid-cols-12">
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-xs uppercase text-muted-foreground">Type</Label>
+                  <div className="flex flex-wrap gap-1">
                     {(["TA", "DA", "AA"] as const).map((t) => (
-                      <SelectItem key={t} value={t}>{TYPE_LABEL[t]}</SelectItem>
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => update(idx, { type: t })}
+                        className={cn(
+                          "rounded px-2 py-1 text-xs font-semibold transition-colors",
+                          it.type === t
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground hover:bg-muted/70"
+                        )}
+                      >
+                        {t}
+                      </button>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </div>
+                </div>
+
+                <div className="sm:col-span-7 space-y-1.5">
+                  <Label className="text-xs uppercase text-muted-foreground">
+                    {info.label} description
+                  </Label>
+                  <Textarea
+                    value={it.description}
+                    onChange={(e) => update(idx, { description: e.target.value })}
+                    placeholder={info.placeholder}
+                    rows={2}
+                    className="resize-y"
+                  />
+                </div>
+
+                <div className="sm:col-span-3 space-y-1.5">
+                  <Label className="text-xs uppercase text-muted-foreground">Amount (BDT)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={it.amount || ""}
+                    onChange={(e) => update(idx, { amount: Number(e.target.value) || 0 })}
+                    className={cn(overItemCap && "border-destructive")}
+                  />
+                  {cap != null ? (
+                    <p className={cn("text-xs", overItemCap ? "text-destructive" : "text-muted-foreground")}>
+                      {overItemCap ? "Over policy cap" : `Cap: BDT ${cap.toLocaleString()}`}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{info.hint}</p>
+                  )}
+                </div>
               </div>
 
-              <div className="sm:col-span-5 space-y-1.5">
-                <Label>Description</Label>
-                <Input
-                  value={it.description}
-                  onChange={(e) => update(idx, { description: e.target.value })}
-                  placeholder={it.type === "TA" ? "e.g. Uber to airport" : it.type === "DA" ? "e.g. Daily food expenses" : "e.g. Hotel stay"}
-                />
-              </div>
-
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label>{QUANTITY_LABEL[it.type]}</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={it.quantity}
-                  onChange={(e) => update(idx, { quantity: Number(e.target.value) || 1 })}
-                />
-              </div>
-
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label>Amount (BDT)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={it.amount}
-                  onChange={(e) => update(idx, { amount: Number(e.target.value) || 0 })}
-                />
-              </div>
-            </div>
-
-            {enableReceipts && (
-              <div className="mt-3 space-y-2">
-                <Label className="text-xs">Receipts</Label>
-                <div className="flex flex-wrap gap-2">
+              {enableReceipts && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+                  <Label className="text-xs text-muted-foreground">Receipts:</Label>
                   {(it.receipts ?? []).map((r, rIdx) => (
                     <ReceiptChip
                       key={rIdx}
@@ -157,40 +180,61 @@ export function ClaimItemsEditor({
                   ))}
                   <ReceiptUploadButton onUploaded={(r) => addReceipt(idx, r)} />
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-xs text-muted-foreground">
-                Line total: BDT {(Number(it.amount || 0) * Number(it.quantity || 1)).toLocaleString()}
-              </div>
               {items.length > 1 && (
-                <Button type="button" size="sm" variant="ghost" onClick={() => remove(idx)}>
-                  Remove
-                </Button>
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => remove(idx)}
+                    className="text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    Remove
+                  </Button>
+                </div>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="flex items-center justify-between">
-        <Button type="button" variant="outline" onClick={add}>
-          + Add claim item
-        </Button>
-        <div className="text-sm font-semibold">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+        <div className="flex gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => add("TA")}>
+            + Travel
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => add("DA")}>
+            + Dearness
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => add("AA")}>
+            + Accommodation
+          </Button>
+        </div>
+        <div className={cn("text-sm font-semibold", overCap && "text-destructive")}>
           Total: BDT {total.toLocaleString()}
+          {caps?.overall != null && (
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              / cap {caps.overall.toLocaleString()}
+            </span>
+          )}
         </div>
       </div>
 
       {showError && <p className="text-sm text-destructive">{showError}</p>}
+      {overCap && (
+        <p className="text-sm text-destructive">
+          Total exceeds the policy cap. Reduce amounts before submitting.
+        </p>
+      )}
     </div>
   );
 }
 
 function ReceiptChip({ receipt, onRemove }: { receipt: Receipt; onRemove: () => void }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-2 py-1 text-xs">
+    <div className="flex items-center gap-2 rounded-md border bg-background px-2 py-1 text-xs">
       <a
         href={receipt.fileUrl}
         target="_blank"

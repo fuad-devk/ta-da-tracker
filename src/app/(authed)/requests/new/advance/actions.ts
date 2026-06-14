@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-guards";
 import { advanceRequestSchema } from "@/lib/request-validators";
-import { daRateFor, aaCeilingFor } from "@/lib/policy";
+import { daRateFor, aaCeilingFor, ADVANCE_AMOUNT_CAP } from "@/lib/policy";
 import {
   RequestStatus,
   RequestType,
@@ -18,6 +18,10 @@ export type SubmitState = {
   error?: string;
   fieldErrors?: Record<string, string>;
 } | undefined;
+
+function tripDays(start: Date, end: Date) {
+  return Math.max(1, Math.ceil((+end - +start) / 86400000) + 1);
+}
 
 export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Promise<SubmitState> {
   const session = await requireSession();
@@ -37,10 +41,6 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
     tripStart: String(fd.get("tripStart") ?? ""),
     tripEnd: String(fd.get("tripEnd") ?? ""),
     paymentMethod: String(fd.get("paymentMethod") ?? ""),
-    bankName: String(fd.get("bankName") ?? ""),
-    bankAccount: String(fd.get("bankAccount") ?? ""),
-    bankBranch: String(fd.get("bankBranch") ?? ""),
-    bkashNumber: String(fd.get("bkashNumber") ?? ""),
     items,
   };
 
@@ -63,10 +63,27 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
     return { error: "No line manager assigned to your profile. Contact your administrator." };
   }
 
-  const totalAmount = data.items.reduce(
-    (s, it) => s + Number(it.amount) * Number(it.quantity ?? 1),
-    0
-  );
+  // Per-item policy caps
+  const days = tripDays(data.tripStart, data.tripEnd);
+  const nights = Math.max(0, days - 1);
+  const daRate = daRateFor(submitter.band as Band, data.locationType as LocationType);
+  const aaCeiling = aaCeilingFor(submitter.band as Band);
+  const daCap = daRate * days;
+  const aaCap = aaCeiling * nights;
+
+  for (const it of data.items) {
+    if (it.type === "DA" && Number(it.amount) > daCap) {
+      return { fieldErrors: { items: `Dearness amount exceeds policy cap of BDT ${daCap.toLocaleString()} (${daRate.toLocaleString()} × ${days} days).` } };
+    }
+    if (it.type === "AA" && Number(it.amount) > aaCap) {
+      return { fieldErrors: { items: `Accommodation amount exceeds policy cap of BDT ${aaCap.toLocaleString()} (${aaCeiling.toLocaleString()} × ${nights} nights).` } };
+    }
+  }
+
+  const totalAmount = data.items.reduce((s, it) => s + Number(it.amount), 0);
+  if (totalAmount > ADVANCE_AMOUNT_CAP) {
+    return { fieldErrors: { items: `Advance total cannot exceed BDT ${ADVANCE_AMOUNT_CAP.toLocaleString()}.` } };
+  }
 
   const lineManager = await prisma.user.findUnique({
     where: { id: submitter.lineManagerId },
@@ -84,24 +101,16 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
       tripStart: data.tripStart,
       tripEnd: data.tripEnd,
       paymentMethod: data.paymentMethod,
-      bankName: data.paymentMethod === "BANK" ? data.bankName || null : null,
-      bankAccount: data.paymentMethod === "BANK" ? data.bankAccount || null : null,
-      bankBranch: data.paymentMethod === "BANK" ? data.bankBranch || null : null,
-      bkashNumber: data.paymentMethod === "BKASH" ? data.bkashNumber || null : null,
       totalAmount,
       submittedAt: new Date(),
       claimItems: {
         create: data.items.map((it) => ({
           type: it.type,
           description: it.description,
-          quantity: it.quantity ?? 1,
+          quantity: 1,
           amount: it.amount,
           rateSnapshot:
-            it.type === "DA"
-              ? daRateFor(submitter.band as Band, data.locationType as LocationType)
-              : it.type === "AA"
-                ? aaCeilingFor(submitter.band as Band)
-                : null,
+            it.type === "DA" ? daRate : it.type === "AA" ? aaCeiling : null,
         })),
       },
     },

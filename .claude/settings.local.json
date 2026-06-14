@@ -40,7 +40,13 @@
       "Bash(xargs kill -9)",
       "mcp__Claude_Preview__preview_start",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/login)",
-      "Bash(kill -9 11251)"
+      "Bash(kill -9 11251)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Run prisma generate during build \\(Vercel cache fix\\) *)",
+      "Bash(git push *)",
+      "Bash(git commit -m 'Simpler cookie-based middleware to avoid NextAuth v5 wrapper edge cases *)",
+      "Bash(npm uninstall *)"
     ]
   }
 }

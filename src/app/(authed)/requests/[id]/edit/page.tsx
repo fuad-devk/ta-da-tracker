@@ -81,10 +81,6 @@ export default async function EditRequestPage({
               tripStart: toDateInput(req.tripStart),
               tripEnd: toDateInput(req.tripEnd),
               paymentMethod: req.paymentMethod,
-              bankName: req.bankName ?? "",
-              bankAccount: req.bankAccount ?? "",
-              bankBranch: req.bankBranch ?? "",
-              bkashNumber: req.bkashNumber ?? "",
             }}
             defaultItems={items}
           />

@@ -21,7 +21,13 @@ type AdvanceOption = {
   tripStart: string;
 };
 
-export function ReimbursementForm({ availableAdvances }: { availableAdvances: AdvanceOption[] }) {
+export function ReimbursementForm({
+  availableAdvances,
+  band,
+}: {
+  availableAdvances: AdvanceOption[];
+  band: string;
+}) {
   const [state, formAction, pending] = useActionState<SubmitState, FormData>(
     submitReimbursementAction,
     undefined
@@ -30,7 +36,11 @@ export function ReimbursementForm({ availableAdvances }: { availableAdvances: Ad
   const [linkedAdvanceId, setLinkedAdvanceId] = useState<string>("");
 
   return (
-    <form action={formAction} className="space-y-8">
+    <form action={formAction} className="space-y-6">
+      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+        Claim costs already incurred — attach receipts. Band {band} rates apply to Dearness and Accommodation lines.
+      </div>
+
       {state?.error && (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}
@@ -56,8 +66,7 @@ export function ReimbursementForm({ availableAdvances }: { availableAdvances: Ad
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            If you took an advance, link it here. At disbursal, Finance will see the net amount
-            due to you (claim minus advance) or due from you (if the advance was larger).
+            Finance auto-calculates the net due to you (or from you) when disbursing.
           </p>
         </div>
       )}
@@ -65,15 +74,15 @@ export function ReimbursementForm({ availableAdvances }: { availableAdvances: Ad
       <TripFields fieldErrors={fe} />
 
       <div>
-        <h3 className="text-sm font-semibold mb-3">Claim items with receipts</h3>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Upload tickets, vouchers, or screenshots for each line item. Images and PDFs only, up to 10 MB each.
-        </p>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Claim items</h3>
+          <span className="text-xs text-muted-foreground">Attach a receipt per line</span>
+        </div>
         <ClaimItemsEditor name="items" showError={fe.items} enableReceipts />
       </div>
 
       <div className="flex justify-end gap-2">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" size="lg" disabled={pending}>
           {pending ? "Submitting..." : "Submit reimbursement claim"}
         </Button>
       </div>

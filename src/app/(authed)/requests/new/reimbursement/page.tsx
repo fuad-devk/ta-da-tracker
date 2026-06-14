@@ -9,6 +9,11 @@ export const dynamic = "force-dynamic";
 export default async function NewReimbursementPage() {
   const session = await requireSession();
 
+  const me = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { band: true },
+  });
+
   const advances = await prisma.request.findMany({
     where: {
       submitterId: session.user.id,
@@ -46,7 +51,7 @@ export default async function NewReimbursementPage() {
           <CardTitle className="text-base">Claim details</CardTitle>
         </CardHeader>
         <CardContent>
-          <ReimbursementForm availableAdvances={options} />
+          <ReimbursementForm availableAdvances={options} band={me?.band ?? "G"} />
         </CardContent>
       </Card>
     </div>

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-guards";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/status-badge";
 import {
   Table,
   TableBody,
@@ -11,16 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { statusLabel } from "@/lib/approval";
 
 export const dynamic = "force-dynamic";
-
-function statusVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
-  if (status === "REJECTED") return "destructive";
-  if (status === "DISBURSED" || status === "APPROVED") return "default";
-  if (status === "DRAFT" || status === "CHANGES_REQUESTED") return "outline";
-  return "secondary";
-}
 
 export default async function RequestsPage() {
   const session = await requireSession();
@@ -41,11 +34,17 @@ export default async function RequestsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/requests/new/advance" className={buttonVariants()}>
-            New advance request
+          <Link
+            href="/requests/new/advance"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            + Advance request
           </Link>
-          <Link href="/requests/new/reimbursement" className={buttonVariants({ variant: "outline" })}>
-            New reimbursement claim
+          <Link
+            href="/requests/new/reimbursement"
+            className={buttonVariants() + " shadow-sm"}
+          >
+            + Reimbursement claim
           </Link>
         </div>
       </div>
@@ -89,9 +88,7 @@ export default async function RequestsPage() {
                 </TableCell>
                 <TableCell className="text-sm">{Number(r.totalAmount).toLocaleString()}</TableCell>
                 <TableCell>
-                  <Badge variant={statusVariant(r.status)}>
-                    {statusLabel(r.status)}
-                  </Badge>
+                  <StatusBadge status={r.status} />
                 </TableCell>
                 <TableCell className="text-right">
                   <Link

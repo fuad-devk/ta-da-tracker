@@ -6,8 +6,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSuperAdmin } from "@/lib/auth-guards";
 import { parseCsv, toRecords } from "@/lib/csv";
-import { BANDS, MODALITIES } from "@/lib/validators";
-import { Band, Modality, Role } from "@prisma/client";
+import { MODALITIES } from "@/lib/validators";
+import { DESIGNATIONS, bandFromDesignation } from "@/lib/policy";
+import { Modality, Role } from "@prisma/client";
 
 export type ParsedRow = {
   rowNumber: number;
@@ -18,7 +19,7 @@ export type ParsedRow = {
     designation: string;
     department: string;
     modality: string;
-    band: string;
+    band: string; // derived
     lineManagerEmail: string;
   };
   errors: string[];
@@ -46,7 +47,6 @@ const REQUIRED_HEADERS = [
   "Designation",
   "Department",
   "Modality",
-  "Band",
   "Line Manager Email",
 ];
 
@@ -54,19 +54,17 @@ const rowSchema = z.object({
   employeeId: z.string().min(1, "Employee ID required"),
   name: z.string().min(1, "Name required"),
   email: z.string().email("Invalid email"),
-  designation: z.string().min(1, "Designation required"),
+  designation: z.string().min(1, "Designation required").refine(
+    (d) => bandFromDesignation(d) !== null,
+    { message: `Designation must be one of: ${DESIGNATIONS.join(", ")}` }
+  ),
   department: z.string().min(1, "Department required"),
   modality: z.enum(MODALITIES, { message: `Modality must be one of: ${MODALITIES.join(", ")}` }),
-  band: z.enum(BANDS, { message: `Band must be one of: ${BANDS.join(", ")}` }),
   lineManagerEmail: z.string().email("Invalid line manager email").optional().or(z.literal("")),
 });
 
 function normalizeModality(v: string): string {
   return v.trim().toUpperCase().replace(/[\s-]/g, "_");
-}
-
-function normalizeBand(v: string): string {
-  return v.trim().toUpperCase();
 }
 
 export async function previewCsvAction(_prev: PreviewResult | undefined, fd: FormData): Promise<PreviewResult> {
@@ -96,21 +94,26 @@ export async function previewCsvAction(_prev: PreviewResult | undefined, fd: For
   const records = toRecords(rows);
 
   const parsedRows: ParsedRow[] = records.map((r, idx) => {
+    const designation = (r["Designation"] ?? "").trim();
     const normalized = {
       employeeId: r["Employee ID"] ?? "",
       name: r["Name"] ?? "",
       email: (r["Email"] ?? "").toLowerCase(),
-      designation: r["Designation"] ?? "",
+      designation,
       department: r["Department"] ?? "",
       modality: normalizeModality(r["Modality"] ?? ""),
-      band: normalizeBand(r["Band"] ?? ""),
       lineManagerEmail: (r["Line Manager Email"] ?? "").toLowerCase(),
     };
     const result = rowSchema.safeParse(normalized);
     const errors = result.success
       ? []
       : result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
-    return { rowNumber: idx + 2, data: normalized, errors };
+    const band = bandFromDesignation(designation) ?? "—";
+    return {
+      rowNumber: idx + 2,
+      data: { ...normalized, band: String(band) },
+      errors,
+    };
   });
 
   // Cross-row: line manager email must exist either in DB or in this batch.
@@ -150,21 +153,27 @@ export async function commitCsvAction(csv: string): Promise<CommitResult> {
   const rows = parseCsv(csv);
   const records = toRecords(rows);
 
-  // First pass: upsert without line-manager links.
   const result: CommitResult = { ok: true, created: 0, updated: 0, failed: 0, errors: [] };
   const allEmails = new Set<string>();
 
   for (let idx = 0; idx < records.length; idx++) {
     const r = records[idx];
     const rowNumber = idx + 2;
+    const designation = (r["Designation"] ?? "").trim();
+    const band = bandFromDesignation(designation);
+    if (!band) {
+      result.failed++;
+      result.errors.push({ rowNumber, message: `Unknown designation: ${designation}` });
+      continue;
+    }
     const normalized = {
       employeeId: r["Employee ID"] ?? "",
       name: r["Name"] ?? "",
       email: (r["Email"] ?? "").toLowerCase(),
-      designation: r["Designation"] ?? "",
+      designation,
       department: r["Department"] ?? "",
       modality: normalizeModality(r["Modality"] ?? "") as Modality,
-      band: normalizeBand(r["Band"] ?? "") as Band,
+      band,
       lineManagerEmail: (r["Line Manager Email"] ?? "").toLowerCase(),
     };
 
