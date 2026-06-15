@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,13 @@ import { updateBrandingAction, type BrandingState } from "./actions";
 export function BrandingForm({
   defaults,
 }: {
-  defaults: { platformName: string; organizationName: string; logoUrl: string | null };
+  defaults: {
+    platformName: string;
+    organizationName: string;
+    hasLogo: boolean;
+    logoVersion: number;
+    logoHeightPx: number;
+  };
 }) {
   const [state, formAction, pending] = useActionState<BrandingState, FormData>(
     updateBrandingAction,
@@ -18,8 +24,18 @@ export function BrandingForm({
   const fe = state?.fieldErrors ?? {};
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(defaults.logoUrl);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(
+    defaults.hasLogo ? `/api/branding/logo?v=${defaults.logoVersion}` : null
+  );
   const [clearLogo, setClearLogo] = useState(false);
+  const [height, setHeight] = useState(defaults.logoHeightPx);
+
+  // After a successful save, refresh the preview using the new server-side version.
+  useEffect(() => {
+    if (state?.ok && defaults.hasLogo) {
+      setPreviewUrl(`/api/branding/logo?v=${Date.now()}`);
+    }
+  }, [state?.ok, defaults.hasLogo]);
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -71,53 +87,98 @@ export function BrandingForm({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label>Logo</Label>
-        <div className="flex items-start gap-4 rounded-md border bg-muted/30 p-4">
-          <div className="flex h-20 w-20 items-center justify-center rounded-md border bg-background">
+      <div className="space-y-3 rounded-md border bg-muted/30 p-4">
+        <div className="flex items-center justify-between">
+          <Label>Logo</Label>
+          <span className="text-xs text-muted-foreground">PNG, JPG, or SVG up to 5 MB</span>
+        </div>
+
+        <div className="rounded-md border bg-background p-4">
+          <div className="mb-3 text-xs uppercase tracking-wide text-muted-foreground">
+            Live preview ({height}px tall)
+          </div>
+          <div className="flex min-h-[80px] items-center gap-3 rounded-md bg-muted/20 px-4 py-3">
             {previewUrl && !clearLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={previewUrl} alt="Logo preview" className="h-16 w-16 object-contain" />
+              <img
+                src={previewUrl}
+                alt="Logo preview"
+                style={{ height: `${height}px`, width: "auto" }}
+                className="max-w-[280px] object-contain"
+              />
             ) : (
-              <span className="text-xs text-muted-foreground">No logo</span>
+              <div
+                style={{ height: `${height}px`, width: `${height}px` }}
+                className="flex items-center justify-center rounded-sm bg-primary text-xs font-semibold text-primary-foreground"
+              >
+                10
+              </div>
             )}
-          </div>
-          <div className="flex-1 space-y-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              name="logo"
-              accept="image/*"
-              onChange={onPickFile}
-              className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground hover:file:bg-muted"
-              disabled={pending}
-            />
-            <p className="text-xs text-muted-foreground">
-              PNG, JPG, or SVG up to 5 MB. Square or wide formats both work.
-            </p>
-            {fe.logo && <p className="text-xs text-destructive">{fe.logo}</p>}
-            {defaults.logoUrl && (
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  name="clearLogo"
-                  checked={clearLogo}
-                  onChange={(e) => {
-                    setClearLogo(e.target.checked);
-                    if (e.target.checked && fileInputRef.current) {
-                      fileInputRef.current.value = "";
-                      setPreviewUrl(null);
-                    } else {
-                      setPreviewUrl(defaults.logoUrl);
-                    }
-                  }}
-                  className="h-3.5 w-3.5"
-                />
-                Remove current logo (fall back to default mark)
-              </label>
-            )}
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-bold tracking-tight">10 Minute School</span>
+              <span className="text-xs text-muted-foreground">TA/DA Tracker</span>
+            </div>
           </div>
         </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="logo">Replace logo</Label>
+          <input
+            ref={fileInputRef}
+            id="logo"
+            type="file"
+            name="logo"
+            accept="image/*"
+            onChange={onPickFile}
+            className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground hover:file:bg-muted"
+            disabled={pending}
+          />
+          {fe.logo && <p className="text-xs text-destructive">{fe.logo}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="logoHeightPx">Display size</Label>
+            <span className="text-xs font-medium text-muted-foreground">{height}px</span>
+          </div>
+          <input
+            id="logoHeightPx"
+            name="logoHeightPx"
+            type="range"
+            min={16}
+            max={96}
+            step={1}
+            value={height}
+            onChange={(e) => setHeight(Number(e.target.value))}
+            className="w-full accent-primary"
+            disabled={pending}
+          />
+          <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span>Small</span>
+            <span>Medium</span>
+            <span>Large</span>
+          </div>
+        </div>
+
+        {defaults.hasLogo && (
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              name="clearLogo"
+              checked={clearLogo}
+              onChange={(e) => {
+                setClearLogo(e.target.checked);
+                if (e.target.checked && fileInputRef.current) {
+                  fileInputRef.current.value = "";
+                  setPreviewUrl(null);
+                }
+              }}
+              className="h-3.5 w-3.5"
+              disabled={pending}
+            />
+            Remove current logo (fall back to default mark)
+          </label>
+        )}
       </div>
 
       <div className="flex justify-end">

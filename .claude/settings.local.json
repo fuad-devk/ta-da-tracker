@@ -51,7 +51,8 @@
       "Bash(git commit -m 'Drop dashboard, beef up My Requests, self-serve password change *)",
       "Bash(git commit -m 'Branding settings: configurable platform name, organization, logo *)",
       "Bash(git commit -m 'Make Sign out always visible in header *)",
-      "Bash(git commit -m 'Fix /dashboard 404 + add reset-admin-password script *)"
+      "Bash(git commit -m 'Fix /dashboard 404 + add reset-admin-password script *)",
+      "Bash(git commit -m 'Logo: store bytes in DB, serve via /api/branding/logo, add size slider *)"
     ]
   }
 }

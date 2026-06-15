@@ -4,23 +4,38 @@ import { prisma } from "@/lib/prisma";
 export type AppSettings = {
   platformName: string;
   organizationName: string;
-  logoUrl: string | null;
+  hasLogo: boolean;
+  logoVersion: number;
+  logoHeightPx: number;
 };
 
 const DEFAULTS: AppSettings = {
   platformName: "TA/DA Tracker",
   organizationName: "10 Minute School",
-  logoUrl: null,
+  hasLogo: false,
+  logoVersion: 0,
+  logoHeightPx: 32,
 };
 
 async function loadAppSettings(): Promise<AppSettings> {
   try {
-    const row = await prisma.appSettings.findUnique({ where: { id: "default" } });
+    const row = await prisma.appSettings.findUnique({
+      where: { id: "default" },
+      select: {
+        platformName: true,
+        organizationName: true,
+        logoData: true,
+        logoVersion: true,
+        logoHeightPx: true,
+      },
+    });
     if (!row) return DEFAULTS;
     return {
       platformName: row.platformName,
       organizationName: row.organizationName,
-      logoUrl: row.logoUrl,
+      hasLogo: !!row.logoData,
+      logoVersion: row.logoVersion,
+      logoHeightPx: row.logoHeightPx,
     };
   } catch {
     return DEFAULTS;

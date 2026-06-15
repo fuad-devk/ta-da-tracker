@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `${s.platformName} — ${s.organizationName}`,
     description: "Submit and approve TA, DA, and Accommodation allowance claims",
-    icons: s.logoUrl ? { icon: s.logoUrl } : undefined,
+    icons: s.hasLogo ? { icon: `/api/branding/logo?v=${s.logoVersion}` } : undefined,
   };
 }
 

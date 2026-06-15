@@ -229,6 +229,10 @@ model AppSettings {
   id               String   @id @default("default")
   platformName     String   @default("TA/DA Tracker")
   organizationName String   @default("10 Minute School")
-  logoUrl          String?
+  logoUrl          String?  // deprecated — kept for back-compat
+  logoData         Bytes?   // raw image bytes served via /api/branding/logo
+  logoMimeType     String?
+  logoVersion      Int      @default(0) // increments on each update for cache busting
+  logoHeightPx     Int      @default(32) // display height in the header (16–96)
   updatedAt        DateTime @updatedAt
 }
