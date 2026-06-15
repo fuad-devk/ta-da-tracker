@@ -11,7 +11,7 @@ export async function loginAction(
 ): Promise<LoginState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const from = String(formData.get("from") ?? "/dashboard");
+  const from = String(formData.get("from") ?? "/requests");
 
   if (!email || !password) {
     return { error: "Email and password are required." };
@@ -21,7 +21,7 @@ export async function loginAction(
     await signIn("credentials", {
       email,
       password,
-      redirectTo: from || "/dashboard",
+      redirectTo: from || "/requests",
     });
   } catch (error) {
     if (error instanceof AuthError) {

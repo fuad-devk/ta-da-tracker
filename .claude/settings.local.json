@@ -46,7 +46,8 @@
       "Bash(git commit -m 'Run prisma generate during build \\(Vercel cache fix\\) *)",
       "Bash(git push *)",
       "Bash(git commit -m 'Simpler cookie-based middleware to avoid NextAuth v5 wrapper edge cases *)",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(git commit -m 'Polish pass: designation→band, editable roles, SA override, simpler forms, finance reports, PDF print, status colors, active nav *)"
     ]
   }
 }

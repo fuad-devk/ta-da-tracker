@@ -20,7 +20,7 @@ export function middleware(req: NextRequest) {
   }
 
   if (hasSession && nextUrl.pathname === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", nextUrl));
+    return NextResponse.redirect(new URL("/requests", nextUrl));
   }
 
   return NextResponse.next();
