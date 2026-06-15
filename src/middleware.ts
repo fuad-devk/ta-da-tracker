@@ -10,6 +10,12 @@ const SESSION_COOKIE_NAMES = [
 
 export function middleware(req: NextRequest) {
   const { nextUrl } = req;
+
+  // Legacy redirect: /dashboard was removed, send anyone hitting it to /requests.
+  if (nextUrl.pathname === "/dashboard" || nextUrl.pathname.startsWith("/dashboard/")) {
+    return NextResponse.redirect(new URL("/requests", nextUrl));
+  }
+
   const isPublic = PUBLIC_PATHS.some((p) => nextUrl.pathname.startsWith(p));
   const hasSession = SESSION_COOKIE_NAMES.some((n) => req.cookies.has(n));
 
