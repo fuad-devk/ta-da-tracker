@@ -49,7 +49,8 @@
       "Bash(npm uninstall *)",
       "Bash(git commit -m 'Polish pass: designation→band, editable roles, SA override, simpler forms, finance reports, PDF print, status colors, active nav *)",
       "Bash(git commit -m 'Drop dashboard, beef up My Requests, self-serve password change *)",
-      "Bash(git commit -m 'Branding settings: configurable platform name, organization, logo *)"
+      "Bash(git commit -m 'Branding settings: configurable platform name, organization, logo *)",
+      "Bash(git commit -m 'Make Sign out always visible in header *)"
     ]
   }
 }

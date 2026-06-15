@@ -2,10 +2,10 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { Logo } from "@/components/brand/logo";
+import { Button } from "@/components/ui/button";
 import { signOutAction } from "./actions";
 import { hasRole } from "@/lib/auth-guards";
 import { HeaderNav } from "@/components/header-nav";
-import { UserMenu } from "@/components/user-menu";
 
 export default async function AuthedLayout({
   children,
@@ -37,20 +37,37 @@ export default async function AuthedLayout({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-8">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-8">
             <Link href="/requests" className="transition-opacity hover:opacity-80">
               <Logo />
             </Link>
             <HeaderNav items={items} />
           </div>
-          <div className="flex items-center gap-3">
-            <UserMenu
-              name={session.user.name ?? "User"}
-              email={session.user.email ?? ""}
-              initials={initials || "•"}
-              onSignOut={signOutAction}
-            />
+
+          <div className="flex items-center gap-2">
+            <Link
+              href="/account/password"
+              className="hidden text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline md:inline"
+            >
+              Change password
+            </Link>
+
+            <div className="hidden items-center gap-2.5 sm:flex">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                {initials || "•"}
+              </div>
+              <div className="hidden text-right text-xs leading-tight lg:block">
+                <div className="font-medium">{session.user.name}</div>
+                <div className="text-muted-foreground">{session.user.email}</div>
+              </div>
+            </div>
+
+            <form action={signOutAction}>
+              <Button type="submit" variant="outline" size="sm">
+                Sign out
+              </Button>
+            </form>
           </div>
         </div>
       </header>
