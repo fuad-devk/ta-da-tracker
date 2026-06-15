@@ -38,6 +38,8 @@ yarn-error.log*
 
 # local uploads (dev fallback for storage)
 /public/uploads
+/public/receipts
+/public/branding
 
 # typescript
 *.tsbuildinfo

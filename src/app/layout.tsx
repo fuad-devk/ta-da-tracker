@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { getAppSettings } from "@/lib/app-settings";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,10 +14,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "TA/DA Tracker — 10 Minute School",
-  description: "Submit and approve TA, DA, and Accommodation allowance claims",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const s = await getAppSettings();
+  return {
+    title: `${s.platformName} — ${s.organizationName}`,
+    description: "Submit and approve TA, DA, and Accommodation allowance claims",
+    icons: s.logoUrl ? { icon: s.logoUrl } : undefined,
+  };
+}
 
 export default function RootLayout({
   children,

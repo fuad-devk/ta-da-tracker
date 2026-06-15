@@ -10,26 +10,47 @@ export type UploadedFile = {
   sizeBytes: number;
 };
 
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_PREFIXES = ["image/", "application/pdf"];
+export type UploadOptions = {
+  folder: "receipts" | "branding";
+  maxBytes?: number;
+  allowedPrefixes?: string[];
+};
+
+const DEFAULTS_BY_FOLDER: Record<UploadOptions["folder"], Required<Omit<UploadOptions, "folder">>> = {
+  receipts: {
+    maxBytes: 10 * 1024 * 1024, // 10 MB
+    allowedPrefixes: ["image/", "application/pdf"],
+  },
+  branding: {
+    maxBytes: 5 * 1024 * 1024, // 5 MB
+    allowedPrefixes: ["image/"],
+  },
+};
 
 const useBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
-const LOCAL_DIR = path.join(process.cwd(), "public", "uploads");
 
-export async function uploadReceipt(file: File): Promise<UploadedFile> {
+export async function uploadFile(file: File, opts: UploadOptions): Promise<UploadedFile> {
   if (!file || file.size === 0) throw new Error("No file provided");
-  if (file.size > MAX_BYTES) throw new Error("File exceeds 10 MB limit");
-  if (!ALLOWED_PREFIXES.some((p) => file.type.startsWith(p))) {
-    throw new Error("Only images and PDFs are allowed");
+  const def = DEFAULTS_BY_FOLDER[opts.folder];
+  const maxBytes = opts.maxBytes ?? def.maxBytes;
+  const allowed = opts.allowedPrefixes ?? def.allowedPrefixes;
+
+  if (file.size > maxBytes) {
+    throw new Error(`File exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit`);
+  }
+  if (!allowed.some((p) => file.type.startsWith(p))) {
+    throw new Error(`File type ${file.type || "unknown"} is not allowed`);
   }
 
   const ext = (file.name.split(".").pop() ?? "bin").toLowerCase();
-  const key = `receipts/${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${ext}`;
+  const key = `${opts.folder}/${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${ext}`;
 
   if (useBlob) {
     const blob = await put(key, file, {
       access: "public",
       contentType: file.type,
+      // Avoid name collision when uploading from multiple sessions
+      addRandomSuffix: false,
     });
     return {
       fileUrl: blob.url,
@@ -39,16 +60,21 @@ export async function uploadReceipt(file: File): Promise<UploadedFile> {
     };
   }
 
-  // Local dev fallback — write to public/uploads, served by Next as a static file.
-  await mkdir(LOCAL_DIR, { recursive: true });
-  const localPath = path.join(LOCAL_DIR, path.basename(key));
+  const localDir = path.join(process.cwd(), "public", opts.folder);
+  await mkdir(localDir, { recursive: true });
+  const localPath = path.join(localDir, path.basename(key));
   const buf = Buffer.from(await file.arrayBuffer());
   await writeFile(localPath, buf);
 
   return {
-    fileUrl: `/uploads/${path.basename(key)}`,
+    fileUrl: `/${opts.folder}/${path.basename(key)}`,
     fileName: file.name,
     mimeType: file.type,
     sizeBytes: file.size,
   };
+}
+
+// Back-compat wrapper used by receipts code.
+export async function uploadReceipt(file: File): Promise<UploadedFile> {
+  return uploadFile(file, { folder: "receipts" });
 }

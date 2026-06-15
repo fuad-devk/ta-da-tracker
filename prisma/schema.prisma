@@ -223,3 +223,12 @@ model EmailLog {
 
   @@index([requestId])
 }
+
+// Singleton row (id = "default") holding tenant-wide branding/config.
+model AppSettings {
+  id               String   @id @default("default")
+  platformName     String   @default("TA/DA Tracker")
+  organizationName String   @default("10 Minute School")
+  logoUrl          String?
+  updatedAt        DateTime @updatedAt
+}
