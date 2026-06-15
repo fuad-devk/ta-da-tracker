@@ -25,7 +25,7 @@ export function AdvanceForm({ caps }: { caps: CapInputs }) {
   return (
     <form action={formAction} className="space-y-6">
       <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900">
-        Advance is for trips longer than {ADVANCE_MIN_TRIP_DAYS} days, capped at BDT {ADVANCE_AMOUNT_CAP.toLocaleString()}. Band {caps.band} rates apply.
+        Advance is for trips longer than {ADVANCE_MIN_TRIP_DAYS} days, capped at BDT {ADVANCE_AMOUNT_CAP.toLocaleString()} (V2 §4.7). Band {caps.band} rates apply. Unused advance must be returned within 3 working days of trip end.
       </div>
 
       {state?.error && (

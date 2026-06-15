@@ -8,11 +8,20 @@ import {
   advanceRequestSchema,
   reimbursementRequestSchema,
 } from "@/lib/request-validators";
-import { daRateFor, aaCeilingFor } from "@/lib/policy";
+import {
+  daCapForTrip,
+  aaCapForTrip,
+  daRateForDay,
+  aaCeilingFor,
+  requiresElevatedApproval,
+  workingDaysBetween,
+  RETROACTIVE_WORKING_DAYS,
+} from "@/lib/policy";
 import {
   RequestStatus,
   type Band,
   type LocationType,
+  type MealsProvided,
 } from "@prisma/client";
 import { sendEmail, emailLayout, approvalUrl } from "@/lib/email";
 import { stageLabel } from "@/lib/approval";
@@ -56,10 +65,10 @@ export async function resubmitAction(
     tripStart: String(fd.get("tripStart") ?? ""),
     tripEnd: String(fd.get("tripEnd") ?? ""),
     paymentMethod: String(fd.get("paymentMethod") ?? ""),
-    bankName: String(fd.get("bankName") ?? ""),
-    bankAccount: String(fd.get("bankAccount") ?? ""),
-    bankBranch: String(fd.get("bankBranch") ?? ""),
-    bkashNumber: String(fd.get("bkashNumber") ?? ""),
+    dutyHours: String(fd.get("dutyHours") ?? "8"),
+    mealsProvided: String(fd.get("mealsProvided") ?? "NONE"),
+    companyBookedTravel: String(fd.get("companyBookedTravel") ?? "false") === "true",
+    companyBookedAccommodation: String(fd.get("companyBookedAccommodation") ?? "false") === "true",
     items,
   };
 
@@ -83,10 +92,44 @@ export async function resubmitAction(
     return { error: "No line manager assigned." };
   }
 
-  const totalAmount = data.items.reduce(
-    (s, it) => s + Number(it.amount) * Number(it.quantity ?? 1),
-    0
+  // V2 caps
+  const daCap = daCapForTrip({
+    band: submitter.band as Band,
+    location: data.locationType as LocationType,
+    tripStart: data.tripStart,
+    tripEnd: data.tripEnd,
+    dutyHoursPerDay: data.dutyHours,
+    meals: data.mealsProvided as MealsProvided,
+  });
+  const aaCap = aaCapForTrip({
+    band: submitter.band as Band,
+    tripStart: data.tripStart,
+    tripEnd: data.tripEnd,
+    companyBookedAccommodation: data.companyBookedAccommodation,
+  });
+
+  for (const it of data.items) {
+    if (it.type === "DA" && Number(it.amount) > daCap) {
+      return { fieldErrors: { items: `Dearness amount exceeds V2 policy cap of BDT ${daCap.toLocaleString()}.` } };
+    }
+    if (it.type === "AA" && Number(it.amount) > aaCap) {
+      return { fieldErrors: { items: `Accommodation amount exceeds V2 policy cap of BDT ${aaCap.toLocaleString()}.` } };
+    }
+  }
+
+  const totalAmount = data.items.reduce((s, it) => s + Number(it.amount), 0);
+
+  const isReimbursement = existing.type === "REIMBURSEMENT";
+  const workingDaysLate = isReimbursement ? workingDaysBetween(data.tripEnd, new Date()) : 0;
+  const retroactive = workingDaysLate > RETROACTIVE_WORKING_DAYS;
+  const needsElevated = requiresElevatedApproval({ totalAmount, retroactive });
+
+  const firstDayDaRate = daRateForDay(
+    submitter.band as Band,
+    data.locationType as LocationType,
+    data.tripStart
   );
+  const aaCeiling = aaCeilingFor(submitter.band as Band);
 
   await prisma.$transaction([
     prisma.claimItem.deleteMany({ where: { requestId } }),
@@ -106,18 +149,20 @@ export async function resubmitAction(
         bkashNumber: null,
         totalAmount,
         submittedAt: new Date(),
+        dutyHours: data.dutyHours,
+        mealsProvided: data.mealsProvided as MealsProvided,
+        companyBookedTravel: data.companyBookedTravel,
+        companyBookedAccommodation: data.companyBookedAccommodation,
+        needsElevatedApproval: needsElevated,
+        retroactive,
         claimItems: {
           create: data.items.map((it) => ({
             type: it.type,
             description: it.description,
-            quantity: it.quantity ?? 1,
+            quantity: 1,
             amount: it.amount,
             rateSnapshot:
-              it.type === "DA"
-                ? daRateFor(submitter.band as Band, data.locationType as LocationType)
-                : it.type === "AA"
-                  ? aaCeilingFor(submitter.band as Band)
-                  : null,
+              it.type === "DA" ? firstDayDaRate : it.type === "AA" ? aaCeiling : null,
             receipts: {
               create: (it.receipts ?? []).map((r) => ({
                 fileUrl: r.fileUrl,
@@ -132,7 +177,6 @@ export async function resubmitAction(
     }),
   ]);
 
-  // Notify line manager that revised request needs review
   const lineManager = await prisma.user.findUnique({
     where: { id: submitter.lineManagerId },
     select: { email: true, name: true },

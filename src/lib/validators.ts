@@ -12,10 +12,21 @@ export const MODALITIES = [
   "CONSULTANT",
 ] as const;
 
-export const ROLES = ["SUPER_ADMIN", "ADMIN_MANAGER", "FINANCE_MANAGER", "EMPLOYEE"] as const;
+export const ROLES = [
+  "SUPER_ADMIN",
+  "ADMIN_MANAGER",
+  "FINANCE_MANAGER",
+  "DEPARTMENT_HEAD",
+  "EMPLOYEE",
+] as const;
 
 // Roles an admin can assign (EMPLOYEE is always implicit)
-export const ASSIGNABLE_ROLES = ["ADMIN_MANAGER", "FINANCE_MANAGER", "SUPER_ADMIN"] as const;
+export const ASSIGNABLE_ROLES = [
+  "ADMIN_MANAGER",
+  "FINANCE_MANAGER",
+  "DEPARTMENT_HEAD",
+  "SUPER_ADMIN",
+] as const;
 
 export const employeeBaseSchema = z.object({
   employeeId: z.string().min(1, "Employee ID is required").max(50),

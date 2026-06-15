@@ -30,7 +30,7 @@ export function stageLabel(stage: ApprovalStage): string {
     case "LINE_MANAGER":
       return "Line Manager";
     case "ADMIN_MANAGER":
-      return "Admin Manager";
+      return "HR Manager";
     case "FINANCE_MANAGER":
       return "Finance Manager";
   }
@@ -43,7 +43,7 @@ export function statusLabel(s: RequestStatus): string {
 // Decides whether the given user can act on a request at its current pending stage.
 export async function canUserActOnRequest(
   user: Pick<User, "id" | "roles">,
-  request: Pick<Request, "id" | "status" | "submitterId">
+  request: Pick<Request, "id" | "status" | "submitterId" | "needsElevatedApproval">
 ): Promise<boolean> {
   const stage = STAGE_FOR_PENDING_STATUS[request.status];
   if (!stage) return false;
@@ -61,7 +61,11 @@ export async function canUserActOnRequest(
     return submitter?.lineManagerId === user.id;
   }
   if (stage === ApprovalStage.ADMIN_MANAGER) {
-    return user.roles.includes(Role.ADMIN_MANAGER);
+    // V2 §3 / §4.6: elevated claims need Department Head or VP-level.
+    if (request.needsElevatedApproval) {
+      return user.roles.includes(Role.DEPARTMENT_HEAD);
+    }
+    return user.roles.includes(Role.ADMIN_MANAGER) || user.roles.includes(Role.DEPARTMENT_HEAD);
   }
   if (stage === ApprovalStage.FINANCE_MANAGER) {
     return user.roles.includes(Role.FINANCE_MANAGER);
@@ -87,21 +91,32 @@ export async function pendingForUserWhere(user: Pick<User, "id" | "roles">) {
     });
   }
   const isSuperAdmin = user.roles.includes(Role.SUPER_ADMIN);
-  const adminCondition = isSuperAdmin
-    ? { status: RequestStatus.PENDING_ADMIN_MANAGER }
-    : { status: RequestStatus.PENDING_ADMIN_MANAGER, NOT: { submitterId: user.id } };
-  const financeCondition = isSuperAdmin
-    ? { status: RequestStatus.PENDING_FINANCE_MANAGER }
-    : { status: RequestStatus.PENDING_FINANCE_MANAGER, NOT: { submitterId: user.id } };
+  const isDeptHead = user.roles.includes(Role.DEPARTMENT_HEAD);
+  const isAdminMgr = user.roles.includes(Role.ADMIN_MANAGER);
 
-  if (user.roles.includes(Role.ADMIN_MANAGER) || isSuperAdmin) {
-    ors.push(adminCondition);
+  const baseExcludeSelf = isSuperAdmin ? {} : { NOT: { submitterId: user.id } };
+
+  // V2: Stage-2 routing.
+  // - Standard (≤25K, not retroactive): ADMIN_MANAGER or DEPARTMENT_HEAD can act
+  // - Elevated (>25K or retroactive): only DEPARTMENT_HEAD
+  if (isAdminMgr || isDeptHead || isSuperAdmin) {
+    ors.push({
+      status: RequestStatus.PENDING_ADMIN_MANAGER,
+      ...baseExcludeSelf,
+      // If user is only ADMIN_MANAGER (not Dept Head/SA), hide elevated items.
+      ...(isAdminMgr && !isDeptHead && !isSuperAdmin
+        ? { needsElevatedApproval: false }
+        : {}),
+    });
   }
+
   if (user.roles.includes(Role.FINANCE_MANAGER) || isSuperAdmin) {
-    ors.push(financeCondition);
+    ors.push({
+      status: RequestStatus.PENDING_FINANCE_MANAGER,
+      ...baseExcludeSelf,
+    });
   }
   if (isSuperAdmin) {
-    // Super Admin can also pick up stage-1 (line manager) items regardless of LM link.
     ors.push({ status: RequestStatus.PENDING_LINE_MANAGER });
   }
   if (ors.length === 0) return { id: "__never__" }; // matches nothing

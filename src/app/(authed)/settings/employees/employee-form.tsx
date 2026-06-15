@@ -29,15 +29,17 @@ export type EmployeeFormValues = {
 };
 
 const ROLE_LABEL: Record<string, string> = {
-  ADMIN_MANAGER: "Admin Manager",
+  ADMIN_MANAGER: "HR Manager",
   FINANCE_MANAGER: "Finance Manager",
+  DEPARTMENT_HEAD: "Department Head",
   SUPER_ADMIN: "Super Admin",
 };
 
 const ROLE_HELP: Record<string, string> = {
-  ADMIN_MANAGER: "Approves at stage 2 (after Line Manager)",
-  FINANCE_MANAGER: "Approves at stage 3 + marks disbursed",
-  SUPER_ADMIN: "Can do everything, override any approval stage",
+  ADMIN_MANAGER: "Approves Stage 2 for standard claims",
+  FINANCE_MANAGER: "Approves Stage 3 + marks disbursed",
+  DEPARTMENT_HEAD: "Required at Stage 2 for elevated claims (>BDT 25K or retroactive)",
+  SUPER_ADMIN: "Can do everything, override any stage",
 };
 
 export function EmployeeForm({

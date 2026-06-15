@@ -16,8 +16,9 @@ datasource db {
 
 enum Role {
   SUPER_ADMIN
-  ADMIN_MANAGER
+  ADMIN_MANAGER     // a.k.a. HR Manager (V2 policy) — Stage-2 approver for standard claims
   FINANCE_MANAGER
+  DEPARTMENT_HEAD   // V2 policy: required at Stage-2 for elevated claims (>25K or late)
   EMPLOYEE
 }
 
@@ -74,6 +75,17 @@ enum ClaimType {
   TA
   DA
   AA
+  CANCELLATION  // V2 policy §11: company-directed cancellation fee reimbursement
+}
+
+enum MealsProvided {
+  NONE          // employee pays for all meals → full DA
+  BREAKFAST
+  LUNCH
+  DINNER
+  BREAKFAST_LUNCH
+  LUNCH_DINNER
+  ALL_MEALS     // company provides all → no DA
 }
 
 enum ApprovalStage {
@@ -141,6 +153,16 @@ model Request {
   bkashNumber   String?
 
   totalAmount   Decimal       @db.Decimal(12, 2)
+
+  // V2 policy fields
+  dutyHours              Int?            // hours worked outside station (drives DA tiering)
+  mealsProvided          MealsProvided   @default(NONE) // V2 §4.4 — partial-meal deduction
+  companyBookedTravel    Boolean         @default(false) // V2 §2.4 — no TA if company books
+  companyBookedAccommodation Boolean     @default(false) // V2 §2.4 — no AA if company books
+  estimatedCost          Decimal?        @db.Decimal(12, 2) // V2 §6 step 1 — provided on travel request
+  needsElevatedApproval  Boolean         @default(false) // computed: >25K or retroactive
+  retroactive            Boolean         @default(false) // submitted >7 working days after trip
+  advanceReturnDueBy     DateTime?       // V2 §4.7 — 3 working days after trip end
 
   // For reimbursement linked to a prior advance
   linkedAdvanceId String?  @unique

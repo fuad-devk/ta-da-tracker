@@ -5,12 +5,22 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-guards";
 import { advanceRequestSchema } from "@/lib/request-validators";
-import { daRateFor, aaCeilingFor, ADVANCE_AMOUNT_CAP } from "@/lib/policy";
+import {
+  daCapForTrip,
+  aaCapForTrip,
+  ADVANCE_AMOUNT_CAP,
+  ADVANCE_RETURN_DAYS,
+  addWorkingDays,
+  requiresElevatedApproval,
+  daRateForDay,
+  aaCeilingFor,
+} from "@/lib/policy";
 import {
   RequestStatus,
   RequestType,
   type Band,
   type LocationType,
+  type MealsProvided,
 } from "@prisma/client";
 import { sendEmail, emailLayout, approvalUrl } from "@/lib/email";
 
@@ -18,10 +28,6 @@ export type SubmitState = {
   error?: string;
   fieldErrors?: Record<string, string>;
 } | undefined;
-
-function tripDays(start: Date, end: Date) {
-  return Math.max(1, Math.ceil((+end - +start) / 86400000) + 1);
-}
 
 export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Promise<SubmitState> {
   const session = await requireSession();
@@ -41,6 +47,10 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
     tripStart: String(fd.get("tripStart") ?? ""),
     tripEnd: String(fd.get("tripEnd") ?? ""),
     paymentMethod: String(fd.get("paymentMethod") ?? ""),
+    dutyHours: String(fd.get("dutyHours") ?? "8"),
+    mealsProvided: String(fd.get("mealsProvided") ?? "NONE"),
+    companyBookedTravel: String(fd.get("companyBookedTravel") ?? "false") === "true",
+    companyBookedAccommodation: String(fd.get("companyBookedAccommodation") ?? "false") === "true",
     items,
   };
 
@@ -63,20 +73,28 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
     return { error: "No line manager assigned to your profile. Contact your administrator." };
   }
 
-  // Per-item policy caps
-  const days = tripDays(data.tripStart, data.tripEnd);
-  const nights = Math.max(0, days - 1);
-  const daRate = daRateFor(submitter.band as Band, data.locationType as LocationType);
-  const aaCeiling = aaCeilingFor(submitter.band as Band);
-  const daCap = daRate * days;
-  const aaCap = aaCeiling * nights;
+  // V2 caps
+  const daCap = daCapForTrip({
+    band: submitter.band as Band,
+    location: data.locationType as LocationType,
+    tripStart: data.tripStart,
+    tripEnd: data.tripEnd,
+    dutyHoursPerDay: data.dutyHours,
+    meals: data.mealsProvided as MealsProvided,
+  });
+  const aaCap = aaCapForTrip({
+    band: submitter.band as Band,
+    tripStart: data.tripStart,
+    tripEnd: data.tripEnd,
+    companyBookedAccommodation: data.companyBookedAccommodation,
+  });
 
   for (const it of data.items) {
     if (it.type === "DA" && Number(it.amount) > daCap) {
-      return { fieldErrors: { items: `Dearness amount exceeds policy cap of BDT ${daCap.toLocaleString()} (${daRate.toLocaleString()} × ${days} days).` } };
+      return { fieldErrors: { items: `Dearness amount exceeds V2 policy cap of BDT ${daCap.toLocaleString()}.` } };
     }
     if (it.type === "AA" && Number(it.amount) > aaCap) {
-      return { fieldErrors: { items: `Accommodation amount exceeds policy cap of BDT ${aaCap.toLocaleString()} (${aaCeiling.toLocaleString()} × ${nights} nights).` } };
+      return { fieldErrors: { items: `Accommodation amount exceeds V2 policy cap of BDT ${aaCap.toLocaleString()}.` } };
     }
   }
 
@@ -84,6 +102,18 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
   if (totalAmount > ADVANCE_AMOUNT_CAP) {
     return { fieldErrors: { items: `Advance total cannot exceed BDT ${ADVANCE_AMOUNT_CAP.toLocaleString()}.` } };
   }
+
+  // V2 elevated routing
+  const needsElevated = requiresElevatedApproval({ totalAmount, retroactive: false });
+  const advanceReturnDueBy = addWorkingDays(data.tripEnd, ADVANCE_RETURN_DAYS);
+
+  // Snapshot rates per item at first day for audit
+  const firstDayDaRate = daRateForDay(
+    submitter.band as Band,
+    data.locationType as LocationType,
+    data.tripStart
+  );
+  const aaCeiling = aaCeilingFor(submitter.band as Band);
 
   const lineManager = await prisma.user.findUnique({
     where: { id: submitter.lineManagerId },
@@ -103,6 +133,13 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
       paymentMethod: data.paymentMethod,
       totalAmount,
       submittedAt: new Date(),
+      dutyHours: data.dutyHours,
+      mealsProvided: data.mealsProvided as MealsProvided,
+      companyBookedTravel: data.companyBookedTravel,
+      companyBookedAccommodation: data.companyBookedAccommodation,
+      needsElevatedApproval: needsElevated,
+      retroactive: false,
+      advanceReturnDueBy,
       claimItems: {
         create: data.items.map((it) => ({
           type: it.type,
@@ -110,7 +147,7 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
           quantity: 1,
           amount: it.amount,
           rateSnapshot:
-            it.type === "DA" ? daRate : it.type === "AA" ? aaCeiling : null,
+            it.type === "DA" ? firstDayDaRate : it.type === "AA" ? aaCeiling : null,
         })),
       },
     },
@@ -127,7 +164,8 @@ export async function submitAdvanceAction(_prev: SubmitState, fd: FormData): Pro
         `<p><strong>${submitter.name}</strong> submitted an advance request totalling <strong>BDT ${totalAmount.toLocaleString()}</strong>.</p>
          <p><strong>Purpose:</strong> ${data.purpose}<br/>
          <strong>Destination:</strong> ${data.destination}<br/>
-         <strong>Trip:</strong> ${data.tripStart.toDateString()} → ${data.tripEnd.toDateString()}</p>`,
+         <strong>Trip:</strong> ${data.tripStart.toDateString()} → ${data.tripEnd.toDateString()}</p>
+         ${needsElevated ? "<p><strong>⚠️ Elevated approval:</strong> exceeds BDT 25,000 — Department Head sign-off required at Stage 2.</p>" : ""}`,
         approvalUrl(request.id),
         "Review request"
       ),

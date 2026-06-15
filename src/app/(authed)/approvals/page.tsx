@@ -80,7 +80,16 @@ export default async function ApprovalsPage() {
                     <div className="font-medium">{r.submitter.name}</div>
                     <div className="text-xs text-muted-foreground">{r.submitter.department} · Band {r.submitter.band}</div>
                   </TableCell>
-                  <TableCell><Badge variant="outline">{r.type}</Badge></TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      <Badge variant="outline">{r.type}</Badge>
+                      {r.needsElevatedApproval && (
+                        <Badge variant="outline" className="border-orange-300 bg-orange-50 text-orange-800">
+                          Elevated
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-sm max-w-xs truncate">{r.purpose}</TableCell>
                   <TableCell>{Number(r.totalAmount).toLocaleString()}</TableCell>
                   <TableCell><Badge variant="secondary">{statusLabel(r.status)}</Badge></TableCell>

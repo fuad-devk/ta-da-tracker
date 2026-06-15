@@ -52,7 +52,12 @@
       "Bash(git commit -m 'Branding settings: configurable platform name, organization, logo *)",
       "Bash(git commit -m 'Make Sign out always visible in header *)",
       "Bash(git commit -m 'Fix /dashboard 404 + add reset-admin-password script *)",
-      "Bash(git commit -m 'Logo: store bytes in DB, serve via /api/branding/logo, add size slider *)"
+      "Bash(git commit -m 'Logo: store bytes in DB, serve via /api/branding/logo, add size slider *)",
+      "Read(//private/tmp/**)",
+      "Bash(cp \"/Users/fuad/Downloads/Policy Change Impact _ 2026 _ 10MS Limited.xlsx\" /tmp/policy-change.xlsx)",
+      "Bash(python3 -c ' *)",
+      "Bash(pip3 install *)",
+      "Bash(git commit -m 'V2 policy alignment \\(effective July 1, 2026\\) *)"
     ]
   }
 }

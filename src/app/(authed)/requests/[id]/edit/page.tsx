@@ -81,6 +81,10 @@ export default async function EditRequestPage({
               tripStart: toDateInput(req.tripStart),
               tripEnd: toDateInput(req.tripEnd),
               paymentMethod: req.paymentMethod,
+              dutyHours: req.dutyHours ?? 8,
+              mealsProvided: req.mealsProvided,
+              companyBookedTravel: req.companyBookedTravel,
+              companyBookedAccommodation: req.companyBookedAccommodation,
             }}
             defaultItems={items}
           />

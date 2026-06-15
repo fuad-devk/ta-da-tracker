@@ -4,6 +4,13 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export type TripDefaults = {
@@ -13,7 +20,21 @@ export type TripDefaults = {
   tripStart?: string;
   tripEnd?: string;
   paymentMethod?: "BANK" | "BKASH";
+  dutyHours?: number;
+  mealsProvided?: string;
+  companyBookedTravel?: boolean;
+  companyBookedAccommodation?: boolean;
 };
+
+const MEALS_OPTIONS: { value: string; label: string }[] = [
+  { value: "NONE", label: "None — I pay for all meals" },
+  { value: "BREAKFAST", label: "Breakfast only" },
+  { value: "LUNCH", label: "Lunch only" },
+  { value: "DINNER", label: "Dinner only" },
+  { value: "BREAKFAST_LUNCH", label: "Breakfast + lunch" },
+  { value: "LUNCH_DINNER", label: "Lunch + dinner" },
+  { value: "ALL_MEALS", label: "All meals provided (no DA)" },
+];
 
 export function TripFields({
   defaults,
@@ -28,6 +49,15 @@ export function TripFields({
   const [locationType, setLocationType] = useState<"CITY" | "INTERCITY">(
     defaults?.locationType ?? "CITY"
   );
+  const [mealsProvided, setMealsProvided] = useState<string>(
+    defaults?.mealsProvided ?? "NONE"
+  );
+  const [companyBookedTravel, setCompanyBookedTravel] = useState<boolean>(
+    defaults?.companyBookedTravel ?? false
+  );
+  const [companyBookedAccommodation, setCompanyBookedAccommodation] = useState<boolean>(
+    defaults?.companyBookedAccommodation ?? false
+  );
 
   return (
     <div className="space-y-4">
@@ -39,7 +69,7 @@ export function TripFields({
           id="purpose"
           name="purpose"
           rows={4}
-          placeholder="Describe the purpose of the trip in detail — meetings, partners, what you'll be doing, etc."
+          placeholder="Describe the purpose of the trip — meetings, partners, what you'll be doing, etc."
           defaultValue={defaults?.purpose}
           required
           className="resize-y"
@@ -81,6 +111,9 @@ export function TripFields({
 
       <input type="hidden" name="locationType" value={locationType} />
       <input type="hidden" name="paymentMethod" value={paymentMethod} />
+      <input type="hidden" name="mealsProvided" value={mealsProvided} />
+      <input type="hidden" name="companyBookedTravel" value={companyBookedTravel ? "true" : "false"} />
+      <input type="hidden" name="companyBookedAccommodation" value={companyBookedAccommodation ? "true" : "false"} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -96,7 +129,7 @@ export function TripFields({
               active={locationType === "INTERCITY"}
               onClick={() => setLocationType("INTERCITY")}
               label="Intercity"
-              sub="Across districts (2× DA)"
+              sub="2× DA weekday · 2.5× weekend"
             />
           </div>
         </div>
@@ -118,6 +151,79 @@ export function TripFields({
             />
           </div>
         </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="dutyHours">
+            Duty hours per day <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="dutyHours"
+            name="dutyHours"
+            type="number"
+            min={0}
+            max={24}
+            step={1}
+            defaultValue={defaults?.dutyHours ?? 8}
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            6–12h → 50% DA. 12+h or overnight → 100% DA.
+          </p>
+          {fieldErrors.dutyHours && <p className="text-xs text-destructive">{fieldErrors.dutyHours}</p>}
+        </div>
+
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="mealsProvided">Meals provided by company</Label>
+          <Select value={mealsProvided} onValueChange={(v) => setMealsProvided(v ?? "NONE")}>
+            <SelectTrigger id="mealsProvided">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MEALS_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            BDT 150 deducted per company-provided meal (V2 §4.4).
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className={cn(
+          "flex cursor-pointer items-start gap-2 rounded-md border bg-background p-3 text-sm transition-colors hover:bg-muted/40",
+          companyBookedTravel && "border-primary bg-primary/5"
+        )}>
+          <input
+            type="checkbox"
+            checked={companyBookedTravel}
+            onChange={(e) => setCompanyBookedTravel(e.target.checked)}
+            className="mt-0.5 h-4 w-4"
+          />
+          <div>
+            <div className="font-medium">Company booked the travel</div>
+            <div className="text-xs text-muted-foreground">No T/A claim allowed</div>
+          </div>
+        </label>
+
+        <label className={cn(
+          "flex cursor-pointer items-start gap-2 rounded-md border bg-background p-3 text-sm transition-colors hover:bg-muted/40",
+          companyBookedAccommodation && "border-primary bg-primary/5"
+        )}>
+          <input
+            type="checkbox"
+            checked={companyBookedAccommodation}
+            onChange={(e) => setCompanyBookedAccommodation(e.target.checked)}
+            className="mt-0.5 h-4 w-4"
+          />
+          <div>
+            <div className="font-medium">Company booked the accommodation</div>
+            <div className="text-xs text-muted-foreground">No A/A claim allowed</div>
+          </div>
+        </label>
       </div>
     </div>
   );
